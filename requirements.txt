@@ -3,4 +3,6 @@ Werkzeug==2.3.7
 PyMuPDF==1.23.7
 python-docx==0.8.11
 Pillow==10.0.0
-gunicorn==21.2.0 
+gunicorn==21.2.0
+celery==5.3.6
+redis==5.0.1 

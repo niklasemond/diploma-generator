@@ -8,10 +8,13 @@ import subprocess  # For PDF conversion
 import logging
 from concurrent.futures import ThreadPoolExecutor
 import random
+from celery import Celery
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+celery = Celery('tasks', broker='redis://localhost:6379/0')
 
 class DiplomaGenerator:
     def __init__(self):
@@ -217,39 +220,37 @@ class DiplomaGenerator:
             raise ValueError(error_msg)
 
     def batch_convert_to_pdf(self, docx_dir: Union[str, Path], pdf_dir: Union[str, Path]) -> List[Path]:
-        """Convert all Word documents in a directory to PDFs using parallel processing"""
+        """Convert all Word documents in a directory to PDFs using task queue"""
         docx_dir = Path(docx_dir)
         pdf_dir = Path(pdf_dir)
         pdf_dir.mkdir(exist_ok=True, parents=True)
         
         docx_files = list(docx_dir.glob('*.docx'))
+        conversion_tasks = []
+        
+        # Submit all files to the task queue
+        for docx_file in docx_files:
+            pdf_file = pdf_dir / f"{docx_file.stem}.pdf"
+            task = convert_document.delay(str(docx_file), str(pdf_file))
+            conversion_tasks.append((task, docx_file, pdf_file))
+        
         converted_files = []
         errors = []
         
-        # Process in smaller batches to prevent memory issues
-        batch_size = 3  # Process 3 files at a time
-        for i in range(0, len(docx_files), batch_size):
-            batch = docx_files[i:i + batch_size]
-            
-            # Use ThreadPoolExecutor for parallel processing
-            with ThreadPoolExecutor(max_workers=3) as executor:
-                futures = []
-                for docx_file in batch:
-                    pdf_file = pdf_dir / f"{docx_file.stem}.pdf"
-                    future = executor.submit(self.convert_to_pdf, docx_file, pdf_file)
-                    futures.append((future, docx_file, pdf_file))
-                
-                # Collect results for this batch
-                for future, docx_file, pdf_file in futures:
-                    try:
-                        future.result(timeout=30)  # Add timeout of 30 seconds per file
-                        converted_files.append(pdf_file)
-                        logger.info(f"Successfully converted {docx_file.name}")
-                    except Exception as e:
-                        error_msg = f"Failed to convert {docx_file.name}: {str(e)}"
-                        logger.error(error_msg)
-                        errors.append(error_msg)
-                        continue
+        # Monitor task completion
+        for task, docx_file, pdf_file in conversion_tasks:
+            try:
+                result = task.get(timeout=60)  # Wait up to 60 seconds per file
+                if result['status'] == 'success':
+                    converted_files.append(pdf_file)
+                    logger.info(result['message'])
+                else:
+                    errors.append(result['message'])
+                    logger.error(result['message'])
+            except Exception as e:
+                error_msg = f"Failed to convert {docx_file.name}: {str(e)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
         
         if not converted_files:
             error_summary = "\n".join(errors)

@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     libreoffice-writer \
     default-jre \
     python3-uno \
+    redis-server \
     && rm -rf /var/lib/apt/lists/*
 
 # Create necessary directories
@@ -29,6 +30,9 @@ ENV PYTHONUNBUFFERED=1
 
 # Create a startup script that manages LibreOffice instances
 RUN echo '#!/bin/bash\n\
+# Start Redis server\n\
+redis-server --daemonize yes\n\
+\n\
 # Start LibreOffice headless mode with resource limits\n\
 ulimit -n 1024\n\
 for port in $(seq 8100 8102); do\n\
@@ -42,10 +46,13 @@ for port in $(seq 8100 8102); do\n\
     & \n\
 done\n\
 \n\
-# Wait for LibreOffice instances to start\n\
+# Wait for services to start\n\
 sleep 5\n\
 \n\
-# Start the application with limited workers\n\
+# Start the worker process\n\
+celery -A app.celery worker --loglevel=info & \n\
+\n\
+# Start the application\n\
 exec gunicorn \
     --bind 0.0.0.0:8080 \
     --workers 2 \
