@@ -108,6 +108,56 @@ def upload_files():
         cleanup_files(template_path, names_path, None)
         return jsonify({'error': str(e)}), 500
 
+@app.route('/convert-to-pdf', methods=['POST'])
+def convert_to_pdf():
+    if 'docx_files' not in request.files:
+        return jsonify({'error': 'No Word documents provided'}), 400
+    
+    docx_files = request.files.getlist('docx_files')
+    
+    try:
+        # Create temporary directories
+        temp_docx_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_docx')
+        temp_pdf_dir = os.path.join(app.config['OUTPUT_FOLDER'], 'temp_pdf')
+        os.makedirs(temp_docx_dir, exist_ok=True)
+        os.makedirs(temp_pdf_dir, exist_ok=True)
+        
+        # Save uploaded Word files
+        saved_paths = []
+        for docx_file in docx_files:
+            if docx_file.filename:
+                path = os.path.join(temp_docx_dir, secure_filename(docx_file.filename))
+                docx_file.save(path)
+                saved_paths.append(path)
+        
+        # Convert to PDFs
+        generator = DiplomaGenerator()
+        pdf_files = generator.batch_convert_to_pdf(temp_docx_dir, temp_pdf_dir)
+        
+        # Create zip with PDFs
+        zip_path = os.path.join(app.config['OUTPUT_FOLDER'], 'converted_pdfs.zip')
+        with zipfile.ZipFile(zip_path, 'w') as zipf:
+            for pdf_file in pdf_files:
+                zipf.write(pdf_file, pdf_file.name)
+        
+        response = send_file(zip_path, as_attachment=True)
+        
+        # Cleanup
+        shutil.rmtree(temp_docx_dir)
+        shutil.rmtree(temp_pdf_dir)
+        os.remove(zip_path)
+        
+        return response
+        
+    except Exception as e:
+        app.logger.error(f"Error converting to PDF: {e}")
+        # Cleanup on error
+        if os.path.exists(temp_docx_dir):
+            shutil.rmtree(temp_docx_dir)
+        if os.path.exists(temp_pdf_dir):
+            shutil.rmtree(temp_pdf_dir)
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port) 

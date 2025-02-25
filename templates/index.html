@@ -52,6 +52,26 @@
             <button type="submit" class="btn btn-primary">Generate Diplomas</button>
         </form>
 
+        <hr class="my-5">
+
+        <div class="mb-4">
+            <h2>Convert to PDF</h2>
+            <form id="convertForm" class="needs-validation" novalidate>
+                <div class="mb-3">
+                    <label for="docx_files" class="form-label">Word Documents</label>
+                    <input type="file" class="form-control" id="docx_files" name="docx_files" 
+                           multiple accept=".docx" required>
+                    <div class="form-text">Select one or more Word documents to convert to PDF</div>
+                </div>
+                <button type="submit" class="btn btn-secondary">Convert to PDF</button>
+            </form>
+            <div id="convertProgress" class="progress" style="display: none;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                     role="progressbar" style="width: 100%"></div>
+            </div>
+            <div id="convertAlert" class="alert mt-3" style="display: none;"></div>
+        </div>
+
         <div class="progress">
             <div class="progress-bar progress-bar-striped progress-bar-animated" 
                  role="progressbar" style="width: 100%"></div>
@@ -91,6 +111,48 @@
                     
                     alert.className = 'alert alert-success mt-3';
                     alert.textContent = 'Diplomas generated successfully!';
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error);
+                }
+            } catch (error) {
+                alert.className = 'alert alert-danger mt-3';
+                alert.textContent = `Error: ${error.message}`;
+            } finally {
+                progress.style.display = 'none';
+                alert.style.display = 'block';
+            }
+        });
+
+        document.getElementById('convertForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const form = e.target;
+            const formData = new FormData(form);
+            const progress = document.querySelector('#convertProgress');
+            const alert = document.querySelector('#convertAlert');
+            
+            progress.style.display = 'flex';
+            alert.style.display = 'none';
+            
+            try {
+                const response = await fetch('/convert-to-pdf', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'converted_pdfs.zip';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    
+                    alert.className = 'alert alert-success mt-3';
+                    alert.textContent = 'Documents converted successfully!';
                 } else {
                     const error = await response.json();
                     throw new Error(error.error);

@@ -4,6 +4,7 @@ import fitz  # PyMuPDF for PDF handling
 from docx import Document  # python-docx for Word documents
 from PIL import Image, ImageDraw, ImageFont  # Pillow for image handling
 import os
+from appscript import app, k  # For Mac Word automation
 
 class DiplomaGenerator:
     def __init__(self):
@@ -165,3 +166,35 @@ class DiplomaGenerator:
         
         # Save the modified document
         doc.save(output_path) 
+
+    def convert_to_pdf(self, docx_path: Union[str, Path], pdf_path: Union[str, Path]) -> None:
+        """Convert a single Word document to PDF using Microsoft Word"""
+        try:
+            word = app('Microsoft Word')
+            doc = word.open(str(docx_path))
+            doc.save_as(as_=str(pdf_path), file_format=k.PDF)
+            doc.close(saving=k.no)
+            word.quit()
+        except Exception as e:
+            raise ValueError(f"Failed to convert {docx_path} to PDF: {str(e)}")
+
+    def batch_convert_to_pdf(self, docx_dir: Union[str, Path], pdf_dir: Union[str, Path]) -> List[Path]:
+        """Convert all Word documents in a directory to PDFs"""
+        docx_dir = Path(docx_dir)
+        pdf_dir = Path(pdf_dir)
+        pdf_dir.mkdir(exist_ok=True, parents=True)
+        
+        converted_files = []
+        word = app('Microsoft Word')
+        
+        try:
+            for docx_file in docx_dir.glob('*.docx'):
+                pdf_file = pdf_dir / f"{docx_file.stem}.pdf"
+                doc = word.open(str(docx_file))
+                doc.save_as(as_=str(pdf_file), file_format=k.PDF)
+                doc.close(saving=k.no)
+                converted_files.append(pdf_file)
+        finally:
+            word.quit()
+            
+        return converted_files 
