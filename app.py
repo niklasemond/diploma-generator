@@ -2,6 +2,8 @@ from flask import Flask, render_template, request, send_file, jsonify
 from werkzeug.utils import secure_filename
 import os
 from diploma_generator import DiplomaGenerator
+import shutil
+import zipfile
 
 app = Flask(__name__)
 
@@ -57,6 +59,10 @@ def upload_files():
         return jsonify({'error': 'Invalid template file format'}), 400
 
     try:
+        # Ensure directories exist
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
+
         # Save uploaded files
         template_path = os.path.join(app.config['UPLOAD_FOLDER'], 
                                    secure_filename(template_file.filename))
@@ -72,21 +78,28 @@ def upload_files():
         names = generator.load_names(names_path)
         
         output_dir = app.config['OUTPUT_FOLDER']
-        generator.generate_diplomas(names, output_dir, placeholder)
+        generated_files = generator.generate_diplomas(names, output_dir, placeholder)
 
-        # Create zip file of all generated diplomas
+        # Create zip file
         zip_path = os.path.join(output_dir, 'diplomas.zip')
-        os.system(f'zip -j {zip_path} {output_dir}/*.pdf')  # Adjust based on output format
+        with zipfile.ZipFile(zip_path, 'w') as zipf:
+            for file_path in generated_files:
+                zipf.write(file_path, os.path.basename(file_path))
 
         response = send_file(zip_path, as_attachment=True)
         
-        # Clean up after sending the file
+        # Clean up
         cleanup_files(template_path, names_path, zip_path)
+        for file_path in generated_files:
+            if os.path.exists(file_path):
+                os.remove(file_path)
         
         return response
 
     except Exception as e:
         app.logger.error(f"Error processing files: {e}")
+        # Clean up any files that might have been created
+        cleanup_files(template_path, names_path, None)
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
