@@ -9,7 +9,6 @@ RUN apt-get update && apt-get install -y \
     libreoffice-writer \
     default-jre \
     python3-uno \
-    unoconv \
     && rm -rf /var/lib/apt/lists/*
 
 # Create necessary directories
@@ -26,19 +25,35 @@ COPY . .
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 ENV PATH="/usr/lib/libreoffice/program:${PATH}"
+ENV PYTHONUNBUFFERED=1
 
-# Create a startup script that launches multiple LibreOffice instances
+# Create a startup script that manages LibreOffice instances
 RUN echo '#!/bin/bash\n\
-# Start multiple LibreOffice instances\n\
-for port in $(seq 8100 8114); do\n\
-    /usr/lib/libreoffice/program/soffice --headless --accept="socket,host=127.0.0.1,port=$port;urp;" --nofirststartwizard & \n\
+# Start LibreOffice headless mode with resource limits\n\
+ulimit -n 1024\n\
+for port in $(seq 8100 8102); do\n\
+    /usr/lib/libreoffice/program/soffice \
+    --headless \
+    --accept="socket,host=127.0.0.1,port=$port;urp;" \
+    --nofirststartwizard \
+    --nologo \
+    --nodefault \
+    --norestore \
+    & \n\
 done\n\
 \n\
 # Wait for LibreOffice instances to start\n\
 sleep 5\n\
 \n\
-# Start the application\n\
-exec gunicorn --bind 0.0.0.0:8080 --workers 4 app:app' > /app/start.sh && \
+# Start the application with limited workers\n\
+exec gunicorn \
+    --bind 0.0.0.0:8080 \
+    --workers 2 \
+    --threads 4 \
+    --timeout 120 \
+    --max-requests 50 \
+    --max-requests-jitter 10 \
+    app:app' > /app/start.sh && \
 chmod +x /app/start.sh
 
 # Expose port

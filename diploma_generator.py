@@ -226,25 +226,30 @@ class DiplomaGenerator:
         converted_files = []
         errors = []
         
-        # Use ThreadPoolExecutor for parallel processing
-        with ThreadPoolExecutor(max_workers=15) as executor:
-            futures = []
-            for docx_file in docx_files:
-                pdf_file = pdf_dir / f"{docx_file.stem}.pdf"
-                future = executor.submit(self.convert_to_pdf, docx_file, pdf_file)
-                futures.append((future, docx_file, pdf_file))
+        # Process in smaller batches to prevent memory issues
+        batch_size = 3  # Process 3 files at a time
+        for i in range(0, len(docx_files), batch_size):
+            batch = docx_files[i:i + batch_size]
             
-            # Collect results
-            for future, docx_file, pdf_file in futures:
-                try:
-                    future.result()  # This will raise any exceptions that occurred
-                    converted_files.append(pdf_file)
-                    logger.info(f"Successfully converted {docx_file.name}")
-                except Exception as e:
-                    error_msg = f"Failed to convert {docx_file.name}: {str(e)}"
-                    logger.error(error_msg)
-                    errors.append(error_msg)
-                    continue
+            # Use ThreadPoolExecutor for parallel processing
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                futures = []
+                for docx_file in batch:
+                    pdf_file = pdf_dir / f"{docx_file.stem}.pdf"
+                    future = executor.submit(self.convert_to_pdf, docx_file, pdf_file)
+                    futures.append((future, docx_file, pdf_file))
+                
+                # Collect results for this batch
+                for future, docx_file, pdf_file in futures:
+                    try:
+                        future.result(timeout=30)  # Add timeout of 30 seconds per file
+                        converted_files.append(pdf_file)
+                        logger.info(f"Successfully converted {docx_file.name}")
+                    except Exception as e:
+                        error_msg = f"Failed to convert {docx_file.name}: {str(e)}"
+                        logger.error(error_msg)
+                        errors.append(error_msg)
+                        continue
         
         if not converted_files:
             error_summary = "\n".join(errors)
