@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_file, jsonify
+from flask import Flask, render_template, request, send_file, jsonify, after_this_request
 from werkzeug.utils import secure_filename
 import os
 from diploma_generator import DiplomaGenerator
