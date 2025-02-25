@@ -103,13 +103,41 @@ class DiplomaGenerator:
 
     def _generate_from_pdf(self, name: str, placeholder: str, output_path: Path) -> None:
         """Generate diploma from PDF template"""
+        # Open the source PDF
         doc = fitz.open(self.template_path)
-        for page in doc:
-            text = page.get_text()
-            if placeholder in text:
-                text = text.replace(placeholder, name)
-                page.insert_text((100, 100), text)  # Adjust position as needed
-        doc.save(output_path)
+        
+        # Create a new PDF document
+        new_doc = fitz.open()
+        
+        # Copy pages from source to new document
+        new_doc.insert_pdf(doc)
+        
+        # Process each page
+        for page in new_doc:
+            # Get all text instances
+            text_instances = page.search_for(placeholder)
+            
+            # Replace each instance of the placeholder
+            for inst in text_instances:
+                # First remove the old text
+                page.draw_rect(inst, color=fitz.utils.getColor('white'), fill=fitz.utils.getColor('white'))
+                
+                # Insert the new name
+                # Get the position from the found instance
+                x = inst[0]  # x coordinate of the placeholder
+                y = inst[1]  # y coordinate of the placeholder
+                
+                # Insert the new text at the same position
+                page.insert_text((x, y), name, 
+                               fontname="helv",  # Use a standard font
+                               fontsize=12,      # You might need to adjust this
+                               color=fitz.utils.getColor('black'))
+        
+        # Save the modified document
+        new_doc.save(output_path)
+        
+        # Close both documents
+        new_doc.close()
         doc.close()
 
     def _generate_from_word(self, name: str, placeholder: str, output_path: Path) -> None:
