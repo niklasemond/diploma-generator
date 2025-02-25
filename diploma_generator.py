@@ -8,14 +8,11 @@ import subprocess  # For PDF conversion
 import logging
 from concurrent.futures import ThreadPoolExecutor
 import random
-from celery import Celery
-from tasks import convert_document  # Import the task
+from converter import convert_single_doc_to_pdf
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-celery = Celery('tasks', broker='redis://localhost:6379/0')
 
 class DiplomaGenerator:
     def __init__(self):
@@ -193,32 +190,8 @@ class DiplomaGenerator:
 
     def convert_to_pdf(self, docx_path: Union[str, Path], pdf_path: Union[str, Path]) -> None:
         """Convert a single Word document to PDF using soffice"""
-        try:
-            logger.info(f"Converting {docx_path} to PDF")
-            port = self._get_soffice_port()
-            
-            # Try conversion with specific port
-            result = subprocess.run(
-                ['soffice', 
-                 f'--accept=socket,host=127.0.0.1,port={port};urp;StarOffice.ServiceManager', 
-                 '--headless', 
-                 '--convert-to', 'pdf', 
-                 '--outdir', str(pdf_path.parent), 
-                 str(docx_path)],
-                capture_output=True,
-                text=True
-            )
-            
-            if result.returncode != 0:
-                logger.warning(f"Conversion failed on port {port}: {result.stderr}")
-                raise ValueError(f"Conversion failed: {result.stderr}")
-                
-            logger.info(f"Successfully converted {docx_path} to PDF using port {port}")
-            
-        except Exception as e:
-            error_msg = f"Error converting {docx_path} to PDF: {str(e)}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+        port = self._get_soffice_port()
+        convert_single_doc_to_pdf(docx_path, pdf_path, port)
 
     def batch_convert_to_pdf(self, docx_dir: Union[str, Path], pdf_dir: Union[str, Path]) -> List[Path]:
         """Convert all Word documents in a directory to PDFs using task queue"""

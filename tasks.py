@@ -1,16 +1,19 @@
 from celery import Celery
 from pathlib import Path
 import os
-from diploma_generator import DiplomaGenerator
+from converter import convert_single_doc_to_pdf
+import random
 
 celery = Celery('tasks', broker='redis://localhost:6379/0')
+
+SOFFICE_PORTS = list(range(8100, 8103))  # 3 ports for conversion
 
 @celery.task(bind=True, max_retries=3)
 def convert_document(self, docx_path: str, pdf_path: str) -> dict:
     """Convert a single document with retry capability"""
     try:
-        generator = DiplomaGenerator()
-        generator.convert_to_pdf(Path(docx_path), Path(pdf_path))
+        port = random.choice(SOFFICE_PORTS)
+        convert_single_doc_to_pdf(docx_path, pdf_path, port)
         return {
             'status': 'success',
             'file': pdf_path,
