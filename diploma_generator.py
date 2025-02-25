@@ -6,6 +6,8 @@ from PIL import Image, ImageDraw, ImageFont  # Pillow for image handling
 import os
 import subprocess  # For PDF conversion
 import logging
+from concurrent.futures import ThreadPoolExecutor
+import random
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -16,6 +18,7 @@ class DiplomaGenerator:
         self.supported_formats = ['.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png']
         self.template_path = None
         self.template_format = None
+        self.soffice_ports = list(range(8100, 8115))  # 15 ports for parallel processing
         
         # Remove AI initialization for now
         # self.text_detector = pipeline("object-detection", model="microsoft/layoutlm-base-uncased")
@@ -180,59 +183,65 @@ class DiplomaGenerator:
         # Save the modified document
         doc.save(output_path) 
 
+    def _get_soffice_port(self):
+        """Get a random available port from the pool"""
+        return random.choice(self.soffice_ports)
+
     def convert_to_pdf(self, docx_path: Union[str, Path], pdf_path: Union[str, Path]) -> None:
-        """Convert a single Word document to PDF using unoconv"""
+        """Convert a single Word document to PDF using soffice"""
         try:
             logger.info(f"Converting {docx_path} to PDF")
-            # First try with soffice directly
+            port = self._get_soffice_port()
+            
+            # Try conversion with specific port
             result = subprocess.run(
-                ['soffice', '--headless', '--convert-to', 'pdf', '--outdir', 
-                 str(pdf_path.parent), str(docx_path)],
+                ['soffice', 
+                 f'--accept=socket,host=127.0.0.1,port={port};urp;StarOffice.ServiceManager', 
+                 '--headless', 
+                 '--convert-to', 'pdf', 
+                 '--outdir', str(pdf_path.parent), 
+                 str(docx_path)],
                 capture_output=True,
                 text=True
             )
             
             if result.returncode != 0:
-                logger.warning(f"soffice conversion failed, trying unoconv: {result.stderr}")
-                # Fallback to unoconv
-                result = subprocess.run(
-                    ['unoconv', '-f', 'pdf', '-o', str(pdf_path), str(docx_path)],
-                    capture_output=True,
-                    text=True
-                )
+                logger.warning(f"Conversion failed on port {port}: {result.stderr}")
+                raise ValueError(f"Conversion failed: {result.stderr}")
                 
-            if result.returncode != 0:
-                error_msg = f"Conversion failed: {result.stderr}"
-                logger.error(error_msg)
-                raise ValueError(error_msg)
-                
-            logger.info(f"Successfully converted {docx_path} to PDF")
+            logger.info(f"Successfully converted {docx_path} to PDF using port {port}")
             
-        except subprocess.CalledProcessError as e:
-            error_msg = f"Process error converting {docx_path} to PDF: {e.stderr}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
         except Exception as e:
-            error_msg = f"Unexpected error converting {docx_path} to PDF: {str(e)}"
+            error_msg = f"Error converting {docx_path} to PDF: {str(e)}"
             logger.error(error_msg)
             raise ValueError(error_msg)
 
     def batch_convert_to_pdf(self, docx_dir: Union[str, Path], pdf_dir: Union[str, Path]) -> List[Path]:
-        """Convert all Word documents in a directory to PDFs"""
+        """Convert all Word documents in a directory to PDFs using parallel processing"""
         docx_dir = Path(docx_dir)
         pdf_dir = Path(pdf_dir)
         pdf_dir.mkdir(exist_ok=True, parents=True)
         
+        docx_files = list(docx_dir.glob('*.docx'))
         converted_files = []
-        for docx_file in docx_dir.glob('*.docx'):
-            try:
+        
+        # Use ThreadPoolExecutor for parallel processing
+        with ThreadPoolExecutor(max_workers=15) as executor:
+            futures = []
+            for docx_file in docx_files:
                 pdf_file = pdf_dir / f"{docx_file.stem}.pdf"
-                self.convert_to_pdf(docx_file, pdf_file)
-                converted_files.append(pdf_file)
-            except Exception as e:
-                logger.error(f"Failed to convert {docx_file}: {str(e)}")
-                continue
+                future = executor.submit(self.convert_to_pdf, docx_file, pdf_file)
+                futures.append((future, pdf_file))
             
+            # Collect results
+            for future, pdf_file in futures:
+                try:
+                    future.result()  # This will raise any exceptions that occurred
+                    converted_files.append(pdf_file)
+                except Exception as e:
+                    logger.error(f"Failed to convert {pdf_file}: {str(e)}")
+                    continue
+        
         if not converted_files:
             raise ValueError("No files were successfully converted")
             

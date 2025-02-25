@@ -27,14 +27,18 @@ ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 ENV PATH="/usr/lib/libreoffice/program:${PATH}"
 
-# Create a startup script
+# Create a startup script that launches multiple LibreOffice instances
 RUN echo '#!/bin/bash\n\
-# Start LibreOffice headless mode\n\
-/usr/lib/libreoffice/program/soffice --headless --accept="socket,host=127.0.0.1,port=8100;urp;" --nofirststartwizard & \n\
-# Wait for LibreOffice to start\n\
+# Start multiple LibreOffice instances\n\
+for port in $(seq 8100 8114); do\n\
+    /usr/lib/libreoffice/program/soffice --headless --accept="socket,host=127.0.0.1,port=$port;urp;" --nofirststartwizard & \n\
+done\n\
+\n\
+# Wait for LibreOffice instances to start\n\
 sleep 5\n\
+\n\
 # Start the application\n\
-exec gunicorn --bind 0.0.0.0:8080 app:app' > /app/start.sh && \
+exec gunicorn --bind 0.0.0.0:8080 --workers 4 app:app' > /app/start.sh && \
 chmod +x /app/start.sh
 
 # Expose port
