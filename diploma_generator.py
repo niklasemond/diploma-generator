@@ -5,6 +5,11 @@ from docx import Document  # python-docx for Word documents
 from PIL import Image, ImageDraw, ImageFont  # Pillow for image handling
 import os
 import subprocess  # For PDF conversion
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class DiplomaGenerator:
     def __init__(self):
@@ -23,11 +28,14 @@ class DiplomaGenerator:
         
         self.template_path = template_path
         self.template_format = template_path.suffix.lower()
+        logger.info(f"Template loaded: {template_path}")
 
     def load_names(self, names_path: Union[str, Path]) -> List[str]:
         """Load names from a text file (one name per line)"""
         with open(names_path, 'r', encoding='utf-8') as f:
-            return [name.strip() for name in f.readlines() if name.strip()]
+            names = [name.strip() for name in f.readlines() if name.strip()]
+            logger.info(f"Loaded {len(names)} names from {names_path}")
+            return names
 
     def detect_placeholder(self) -> str:
         """Use AI to detect potential name placeholder in the template"""
@@ -47,9 +55,14 @@ class DiplomaGenerator:
         
         generated_files = []
         for name in names:
-            output_path = output_dir / f"diploma_{name.replace(' ', '_')}.{output_format}"
-            self._generate_single_diploma(name, placeholder, output_path)
-            generated_files.append(output_path)
+            try:
+                output_path = output_dir / f"diploma_{name.replace(' ', '_')}.{output_format}"
+                self._generate_single_diploma(name, placeholder, output_path)
+                generated_files.append(output_path)
+                logger.info(f"Generated diploma for {name}")
+            except Exception as e:
+                logger.error(f"Failed to generate diploma for {name}: {str(e)}")
+                continue
             
         return generated_files
 
@@ -170,12 +183,22 @@ class DiplomaGenerator:
     def convert_to_pdf(self, docx_path: Union[str, Path], pdf_path: Union[str, Path]) -> None:
         """Convert a single Word document to PDF using unoconv"""
         try:
-            result = subprocess.run(['unoconv', '-f', 'pdf', '-o', str(pdf_path), str(docx_path)], 
-                                  capture_output=True, text=True)
-            if result.returncode != 0:
-                raise ValueError(f"Failed to convert {docx_path} to PDF: {result.stderr}")
+            logger.info(f"Converting {docx_path} to PDF")
+            result = subprocess.run(
+                ['unoconv', '-f', 'pdf', '-o', str(pdf_path), str(docx_path)],
+                capture_output=True,
+                text=True,
+                check=True  # This will raise CalledProcessError if the command fails
+            )
+            logger.info(f"Successfully converted {docx_path} to PDF")
+        except subprocess.CalledProcessError as e:
+            error_msg = f"Failed to convert {docx_path} to PDF: {e.stderr}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         except Exception as e:
-            raise ValueError(f"Failed to convert {docx_path} to PDF: {str(e)}")
+            error_msg = f"Unexpected error converting {docx_path} to PDF: {str(e)}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
     def batch_convert_to_pdf(self, docx_dir: Union[str, Path], pdf_dir: Union[str, Path]) -> List[Path]:
         """Convert all Word documents in a directory to PDFs"""
@@ -184,12 +207,16 @@ class DiplomaGenerator:
         pdf_dir.mkdir(exist_ok=True, parents=True)
         
         converted_files = []
-        try:
-            for docx_file in docx_dir.glob('*.docx'):
+        for docx_file in docx_dir.glob('*.docx'):
+            try:
                 pdf_file = pdf_dir / f"{docx_file.stem}.pdf"
                 self.convert_to_pdf(docx_file, pdf_file)
                 converted_files.append(pdf_file)
-        except Exception as e:
-            raise ValueError(f"Failed to convert documents: {str(e)}")
+            except Exception as e:
+                logger.error(f"Failed to convert {docx_file}: {str(e)}")
+                continue
+            
+        if not converted_files:
+            raise ValueError("No files were successfully converted")
             
         return converted_files 
