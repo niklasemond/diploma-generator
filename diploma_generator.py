@@ -39,7 +39,7 @@ class DiplomaGenerator:
             return self._detect_placeholder_word()
 
     def generate_diplomas(self, names: List[str], output_dir: Union[str, Path], 
-                         placeholder: str, output_format: str = 'pdf') -> List[Path]:
+                         placeholder: str, output_format: str = 'docx') -> List[Path]:
         """Generate individual diplomas and return list of generated file paths"""
         output_dir = Path(output_dir)
         output_dir.mkdir(exist_ok=True, parents=True)
@@ -142,8 +142,26 @@ class DiplomaGenerator:
 
     def _generate_from_word(self, name: str, placeholder: str, output_path: Path) -> None:
         """Generate diploma from Word template"""
+        # Create a copy of the template
         doc = Document(self.template_path)
+        
+        # Replace placeholder in paragraphs
         for paragraph in doc.paragraphs:
             if placeholder in paragraph.text:
-                paragraph.text = paragraph.text.replace(placeholder, name)
+                # Preserve the original formatting
+                for run in paragraph.runs:
+                    if placeholder in run.text:
+                        run.text = run.text.replace(placeholder, name)
+        
+        # Also check tables if any
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if placeholder in cell.text:
+                        for paragraph in cell.paragraphs:
+                            for run in paragraph.runs:
+                                if placeholder in run.text:
+                                    run.text = run.text.replace(placeholder, name)
+        
+        # Save the modified document
         doc.save(output_path) 

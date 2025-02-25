@@ -48,6 +48,7 @@ def upload_files():
     template_file = request.files['template']
     names_file = request.files['names']
     placeholder = request.form.get('placeholder', '[NAME]')
+    output_format = request.form.get('output_format', 'docx')  # Default to docx
 
     if template_file.filename == '':
         return jsonify({'error': 'No template selected'}), 400
@@ -78,7 +79,12 @@ def upload_files():
         names = generator.load_names(names_path)
         
         output_dir = app.config['OUTPUT_FOLDER']
-        generated_files = generator.generate_diplomas(names, output_dir, placeholder)
+        generated_files = generator.generate_diplomas(
+            names, 
+            output_dir, 
+            placeholder,
+            output_format='docx'  # Force Word format
+        )
 
         # Create zip file
         zip_path = os.path.join(output_dir, 'diplomas.zip')

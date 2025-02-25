@@ -40,6 +40,15 @@
                 <div class="form-text">Text to replace with names in the template</div>
             </div>
 
+            <div class="mb-3">
+                <label for="output_format" class="form-label">Output Format</label>
+                <select class="form-select" id="output_format" name="output_format">
+                    <option value="docx" selected>Word Document (.docx)</option>
+                    <!-- Temporarily disable PDF option until fixed -->
+                    <!-- <option value="pdf">PDF Document (.pdf)</option> -->
+                </select>
+            </div>
+
             <button type="submit" class="btn btn-primary">Generate Diplomas</button>
         </form>
 
