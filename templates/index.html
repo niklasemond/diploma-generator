@@ -65,7 +65,13 @@
                 </div>
                 <button type="submit" class="btn btn-secondary">Convert to PDF</button>
             </form>
-            <div id="convertProgress" class="progress" style="display: none;">
+            
+            <!-- Add container for individual progress bars -->
+            <div id="fileProgress" class="mt-3">
+                <!-- Progress bars will be added here dynamically -->
+            </div>
+            
+            <div id="convertProgress" class="progress mt-3" style="display: none;">
                 <div class="progress-bar progress-bar-striped progress-bar-animated" 
                      role="progressbar" style="width: 100%"></div>
             </div>
@@ -124,16 +130,50 @@
             }
         });
 
+        function createProgressBar(filename) {
+            const div = document.createElement('div');
+            div.className = 'mb-2';
+            div.innerHTML = `
+                <small class="d-flex justify-content-between">
+                    <span>${filename}</span>
+                    <span class="status">Pending...</span>
+                </small>
+                <div class="progress" style="height: 5px;">
+                    <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                </div>
+            `;
+            return div;
+        }
+
+        function updateFileProgress(progressDiv, status, success = true) {
+            const statusSpan = progressDiv.querySelector('.status');
+            const progressBar = progressDiv.querySelector('.progress-bar');
+            
+            statusSpan.textContent = status;
+            progressBar.style.width = '100%';
+            progressBar.className = `progress-bar ${success ? 'bg-success' : 'bg-danger'}`;
+        }
+
         document.getElementById('convertForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const form = e.target;
             const formData = new FormData(form);
-            const progress = document.querySelector('#convertProgress');
+            const files = form.querySelector('#docx_files').files;
+            const fileProgress = document.getElementById('fileProgress');
             const alert = document.querySelector('#convertAlert');
             
-            progress.style.display = 'flex';
+            // Clear previous progress bars and alerts
+            fileProgress.innerHTML = '';
             alert.style.display = 'none';
+            
+            // Create progress bars for each file
+            const progressBars = {};
+            for (let file of files) {
+                const progressDiv = createProgressBar(file.name);
+                fileProgress.appendChild(progressDiv);
+                progressBars[file.name] = progressDiv;
+            }
             
             try {
                 const response = await fetch('/convert-to-pdf', {
@@ -141,27 +181,71 @@
                     body: formData
                 });
                 
+                const contentType = response.headers.get('content-type');
+                const conversionSummary = response.headers.get('X-Conversion-Summary');
+                const conversionErrors = response.headers.get('X-Conversion-Errors');
+                
                 if (response.ok) {
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'converted_pdfs.zip';
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    
-                    alert.className = 'alert alert-success mt-3';
-                    alert.textContent = 'Documents converted successfully!';
+                    if (contentType && contentType.includes('application/zip')) {
+                        // Update progress bars based on conversion results
+                        if (conversionErrors) {
+                            const errors = conversionErrors.split(';');
+                            for (let error of errors) {
+                                const match = error.match(/Failed to convert (.*?):/);
+                                if (match && match[1] && progressBars[match[1]]) {
+                                    updateFileProgress(progressBars[match[1]], 'Failed', false);
+                                }
+                            }
+                        }
+                        
+                        // Update successful conversions
+                        for (let filename in progressBars) {
+                            const progressDiv = progressBars[filename];
+                            if (progressDiv.querySelector('.status').textContent === 'Pending...') {
+                                updateFileProgress(progressDiv, 'Converted', true);
+                            }
+                        }
+                        
+                        // Handle file download
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'converted_pdfs.zip';
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        
+                        // Show conversion summary
+                        alert.className = 'alert alert-success mt-3';
+                        let message = conversionSummary || 'Documents converted successfully!';
+                        if (conversionErrors) {
+                            message += '\n\nWarnings:\n' + conversionErrors.split(';').join('\n');
+                            alert.className = 'alert alert-warning mt-3';
+                        }
+                        alert.innerHTML = message.replace(/\n/g, '<br>');
+                        alert.style.display = 'block';
+                    }
                 } else {
-                    const error = await response.json();
-                    throw new Error(error.error);
+                    // Handle error response
+                    if (contentType && contentType.includes('application/json')) {
+                        const data = await response.json();
+                        throw new Error(data.error || 'Failed to convert documents');
+                    } else {
+                        throw new Error('Failed to convert documents');
+                    }
                 }
             } catch (error) {
+                // Update all pending progress bars as failed
+                for (let filename in progressBars) {
+                    const progressDiv = progressBars[filename];
+                    if (progressDiv.querySelector('.status').textContent === 'Pending...') {
+                        updateFileProgress(progressDiv, 'Failed', false);
+                    }
+                }
+                
                 alert.className = 'alert alert-danger mt-3';
                 alert.textContent = `Error: ${error.message}`;
-            } finally {
-                progress.style.display = 'none';
                 alert.style.display = 'block';
             }
         });

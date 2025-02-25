@@ -224,6 +224,7 @@ class DiplomaGenerator:
         
         docx_files = list(docx_dir.glob('*.docx'))
         converted_files = []
+        errors = []
         
         # Use ThreadPoolExecutor for parallel processing
         with ThreadPoolExecutor(max_workers=15) as executor:
@@ -231,18 +232,24 @@ class DiplomaGenerator:
             for docx_file in docx_files:
                 pdf_file = pdf_dir / f"{docx_file.stem}.pdf"
                 future = executor.submit(self.convert_to_pdf, docx_file, pdf_file)
-                futures.append((future, pdf_file))
+                futures.append((future, docx_file, pdf_file))
             
             # Collect results
-            for future, pdf_file in futures:
+            for future, docx_file, pdf_file in futures:
                 try:
                     future.result()  # This will raise any exceptions that occurred
                     converted_files.append(pdf_file)
+                    logger.info(f"Successfully converted {docx_file.name}")
                 except Exception as e:
-                    logger.error(f"Failed to convert {pdf_file}: {str(e)}")
+                    error_msg = f"Failed to convert {docx_file.name}: {str(e)}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
                     continue
         
         if not converted_files:
-            raise ValueError("No files were successfully converted")
-            
-        return converted_files 
+            error_summary = "\n".join(errors)
+            raise ValueError(f"No files were successfully converted. Errors:\n{error_summary}")
+        elif errors:
+            logger.warning(f"Some files failed to convert:\n{chr(10).join(errors)}")
+        
+        return converted_files, errors 

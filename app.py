@@ -119,6 +119,7 @@ def convert_to_pdf():
         return jsonify({'error': 'No Word documents provided'}), 400
     
     docx_files = request.files.getlist('docx_files')
+    total_files = len([f for f in docx_files if f.filename])
     
     try:
         # Validate file types first
@@ -150,9 +151,10 @@ def convert_to_pdf():
         
         # Convert to PDFs
         generator = DiplomaGenerator()
-        pdf_files = generator.batch_convert_to_pdf(temp_docx_dir, temp_pdf_dir)
+        pdf_files, errors = generator.batch_convert_to_pdf(temp_docx_dir, temp_pdf_dir)
         
-        app.logger.info(f"Successfully converted {len(pdf_files)} files to PDF")
+        success_count = len(pdf_files)
+        app.logger.info(f"Successfully converted {success_count} out of {total_files} files to PDF")
         
         # Create zip with PDFs
         zip_path = os.path.join(app.config['OUTPUT_FOLDER'], 'converted_pdfs.zip')
@@ -164,7 +166,6 @@ def convert_to_pdf():
         @after_this_request
         def cleanup(response):
             try:
-                # Cleanup
                 if os.path.exists(temp_docx_dir):
                     shutil.rmtree(temp_docx_dir)
                 if os.path.exists(temp_pdf_dir):
@@ -175,13 +176,19 @@ def convert_to_pdf():
             except Exception as e:
                 app.logger.error(f"Cleanup error: {e}")
             return response
-        
-        return send_file(
+
+        # Add conversion summary to response headers
+        response = send_file(
             zip_path,
             mimetype='application/zip',
             as_attachment=True,
             download_name='converted_pdfs.zip'
         )
+        response.headers['X-Conversion-Summary'] = f"Converted {success_count} of {total_files} files"
+        if errors:
+            response.headers['X-Conversion-Errors'] = '; '.join(errors)
+        
+        return response
         
     except Exception as e:
         app.logger.error(f"Error converting to PDF: {e}")
