@@ -17,9 +17,14 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
 
 ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png'}
+ALLOWED_WORD_EXTENSIONS = {'.docx', '.doc'}
 
 def allowed_file(filename):
     return os.path.splitext(filename)[1].lower() in ALLOWED_EXTENSIONS
+
+def allowed_word_file(filename):
+    """Check if the file is a Word document"""
+    return os.path.splitext(filename)[1].lower() in ALLOWED_WORD_EXTENSIONS
 
 def cleanup_files(template_path, names_path, zip_path):
     """Clean up temporary files"""
@@ -116,6 +121,13 @@ def convert_to_pdf():
     docx_files = request.files.getlist('docx_files')
     
     try:
+        # Validate file types first
+        for docx_file in docx_files:
+            if docx_file.filename and not allowed_word_file(docx_file.filename):
+                return jsonify({
+                    'error': f'Invalid file type: {docx_file.filename}. Only Word documents (.doc, .docx) are allowed.'
+                }), 400
+
         # Create temporary directories
         temp_docx_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_docx')
         temp_pdf_dir = os.path.join(app.config['OUTPUT_FOLDER'], 'temp_pdf')
@@ -129,25 +141,47 @@ def convert_to_pdf():
                 path = os.path.join(temp_docx_dir, secure_filename(docx_file.filename))
                 docx_file.save(path)
                 saved_paths.append(path)
+                app.logger.info(f"Saved Word file: {path}")
+        
+        if not saved_paths:
+            return jsonify({'error': 'No valid files uploaded'}), 400
+        
+        app.logger.info(f"Converting {len(saved_paths)} Word files to PDF")
         
         # Convert to PDFs
         generator = DiplomaGenerator()
         pdf_files = generator.batch_convert_to_pdf(temp_docx_dir, temp_pdf_dir)
+        
+        app.logger.info(f"Successfully converted {len(pdf_files)} files to PDF")
         
         # Create zip with PDFs
         zip_path = os.path.join(app.config['OUTPUT_FOLDER'], 'converted_pdfs.zip')
         with zipfile.ZipFile(zip_path, 'w') as zipf:
             for pdf_file in pdf_files:
                 zipf.write(pdf_file, pdf_file.name)
+                app.logger.info(f"Added {pdf_file.name} to zip file")
         
-        response = send_file(zip_path, as_attachment=True)
+        @after_this_request
+        def cleanup(response):
+            try:
+                # Cleanup
+                if os.path.exists(temp_docx_dir):
+                    shutil.rmtree(temp_docx_dir)
+                if os.path.exists(temp_pdf_dir):
+                    shutil.rmtree(temp_pdf_dir)
+                if os.path.exists(zip_path):
+                    os.remove(zip_path)
+                app.logger.info("Cleanup completed successfully")
+            except Exception as e:
+                app.logger.error(f"Cleanup error: {e}")
+            return response
         
-        # Cleanup
-        shutil.rmtree(temp_docx_dir)
-        shutil.rmtree(temp_pdf_dir)
-        os.remove(zip_path)
-        
-        return response
+        return send_file(
+            zip_path,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='converted_pdfs.zip'
+        )
         
     except Exception as e:
         app.logger.error(f"Error converting to PDF: {e}")
@@ -156,7 +190,12 @@ def convert_to_pdf():
             shutil.rmtree(temp_docx_dir)
         if os.path.exists(temp_pdf_dir):
             shutil.rmtree(temp_pdf_dir)
-        return jsonify({'error': str(e)}), 500
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        return jsonify({
+            'error': str(e),
+            'message': 'Failed to convert documents to PDF'
+        }), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
