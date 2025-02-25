@@ -9,6 +9,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 import random
 from converter import convert_single_doc_to_pdf
+from tasks import convert_document  # Add this import
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
