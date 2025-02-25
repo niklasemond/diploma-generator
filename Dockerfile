@@ -30,8 +30,13 @@ ENV PYTHONUNBUFFERED=1
 
 # Create a startup script that manages LibreOffice instances
 RUN echo '#!/bin/bash\n\
-# Start Redis server\n\
-redis-server --daemonize yes\n\
+# Start Redis server with proper configuration\n\
+redis-server /etc/redis/redis.conf --daemonize yes\n\
+\n\
+# Wait for Redis to start\n\
+until redis-cli ping; do\n\
+    sleep 1\n\
+done\n\
 \n\
 # Start LibreOffice headless mode with resource limits\n\
 ulimit -n 1024\n\
@@ -49,8 +54,8 @@ done\n\
 # Wait for services to start\n\
 sleep 5\n\
 \n\
-# Start the worker process\n\
-celery -A app.celery worker --loglevel=info & \n\
+# Start the Celery worker\n\
+celery -A tasks worker --loglevel=info & \n\
 \n\
 # Start the application\n\
 exec gunicorn \
@@ -66,9 +71,12 @@ chmod +x /app/start.sh
 # Expose port
 EXPOSE 8080
 
-# Update Redis configuration
+# Update Redis configuration for multiple databases
 RUN sed -i 's/bind 127.0.0.1/bind 0.0.0.0/g' /etc/redis/redis.conf && \
-    sed -i 's/protected-mode yes/protected-mode no/g' /etc/redis/redis.conf
+    sed -i 's/protected-mode yes/protected-mode no/g' /etc/redis/redis.conf && \
+    sed -i 's/databases 16/databases 32/g' /etc/redis/redis.conf && \
+    echo "maxmemory 256mb" >> /etc/redis/redis.conf && \
+    echo "maxmemory-policy allkeys-lru" >> /etc/redis/redis.conf
 
 # Run the application with the startup script
 CMD ["/app/start.sh"] 

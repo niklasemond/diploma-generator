@@ -4,7 +4,19 @@ import os
 from converter import convert_single_doc_to_pdf
 import random
 
-celery = Celery('tasks', broker='redis://localhost:6379/0')
+# Configure Celery with Redis as both broker and result backend
+celery = Celery('tasks',
+                broker='redis://localhost:6379/0',
+                backend='redis://localhost:6379/1')  # Use different DB for results
+
+# Configure Celery
+celery.conf.update(
+    task_serializer='json',
+    accept_content=['json'],
+    result_serializer='json',
+    timezone='UTC',
+    enable_utc=True,
+)
 
 SOFFICE_PORTS = list(range(8100, 8103))  # 3 ports for conversion
 
