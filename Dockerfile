@@ -6,14 +6,14 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     zip \
     libreoffice \
-    libreoffice-script-provider-python \
+    libreoffice-writer \
+    default-jre \
     python3-uno \
     unoconv \
     && rm -rf /var/lib/apt/lists/*
 
-# Start LibreOffice in headless mode as a daemon
-RUN mkdir -p /var/run/soffice && \
-    nohup /usr/bin/soffice --headless --accept="socket,host=127.0.0.1,port=8100;urp;" --nofirststartwizard > /dev/null 2>&1 &
+# Create necessary directories
+RUN mkdir -p uploads output
 
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
@@ -22,17 +22,18 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create necessary directories
-RUN mkdir -p uploads output
-
 # Set environment variables
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
+ENV PATH="/usr/lib/libreoffice/program:${PATH}"
 
 # Create a startup script
 RUN echo '#!/bin/bash\n\
-soffice --headless --accept="socket,host=127.0.0.1,port=8100;urp;" --nofirststartwizard & \
-sleep 5 && \
+# Start LibreOffice headless mode\n\
+/usr/lib/libreoffice/program/soffice --headless --accept="socket,host=127.0.0.1,port=8100;urp;" --nofirststartwizard & \n\
+# Wait for LibreOffice to start\n\
+sleep 5\n\
+# Start the application\n\
 exec gunicorn --bind 0.0.0.0:8080 app:app' > /app/start.sh && \
 chmod +x /app/start.sh
 

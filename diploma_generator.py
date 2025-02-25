@@ -184,15 +184,32 @@ class DiplomaGenerator:
         """Convert a single Word document to PDF using unoconv"""
         try:
             logger.info(f"Converting {docx_path} to PDF")
+            # First try with soffice directly
             result = subprocess.run(
-                ['unoconv', '-f', 'pdf', '-o', str(pdf_path), str(docx_path)],
+                ['soffice', '--headless', '--convert-to', 'pdf', '--outdir', 
+                 str(pdf_path.parent), str(docx_path)],
                 capture_output=True,
-                text=True,
-                check=True  # This will raise CalledProcessError if the command fails
+                text=True
             )
+            
+            if result.returncode != 0:
+                logger.warning(f"soffice conversion failed, trying unoconv: {result.stderr}")
+                # Fallback to unoconv
+                result = subprocess.run(
+                    ['unoconv', '-f', 'pdf', '-o', str(pdf_path), str(docx_path)],
+                    capture_output=True,
+                    text=True
+                )
+                
+            if result.returncode != 0:
+                error_msg = f"Conversion failed: {result.stderr}"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+                
             logger.info(f"Successfully converted {docx_path} to PDF")
+            
         except subprocess.CalledProcessError as e:
-            error_msg = f"Failed to convert {docx_path} to PDF: {e.stderr}"
+            error_msg = f"Process error converting {docx_path} to PDF: {e.stderr}"
             logger.error(error_msg)
             raise ValueError(error_msg)
         except Exception as e:
