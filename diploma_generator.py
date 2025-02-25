@@ -4,6 +4,7 @@ import fitz  # PyMuPDF for PDF handling
 from docx import Document  # python-docx for Word documents
 from PIL import Image, ImageDraw, ImageFont  # Pillow for image handling
 import os
+import subprocess  # For PDF conversion
 
 class DiplomaGenerator:
     def __init__(self):
@@ -169,7 +170,6 @@ class DiplomaGenerator:
     def convert_to_pdf(self, docx_path: Union[str, Path], pdf_path: Union[str, Path]) -> None:
         """Convert a single Word document to PDF using unoconv"""
         try:
-            import subprocess
             result = subprocess.run(['unoconv', '-f', 'pdf', '-o', str(pdf_path), str(docx_path)], 
                                   capture_output=True, text=True)
             if result.returncode != 0:
@@ -184,7 +184,6 @@ class DiplomaGenerator:
         pdf_dir.mkdir(exist_ok=True, parents=True)
         
         converted_files = []
-        
         try:
             for docx_file in docx_dir.glob('*.docx'):
                 pdf_file = pdf_dir / f"{docx_file.stem}.pdf"
