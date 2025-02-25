@@ -4,7 +4,6 @@ import fitz  # PyMuPDF for PDF handling
 from docx import Document  # python-docx for Word documents
 from PIL import Image, ImageDraw, ImageFont  # Pillow for image handling
 import os
-from appscript import app, k  # For Mac Word automation
 
 class DiplomaGenerator:
     def __init__(self):
@@ -168,13 +167,13 @@ class DiplomaGenerator:
         doc.save(output_path) 
 
     def convert_to_pdf(self, docx_path: Union[str, Path], pdf_path: Union[str, Path]) -> None:
-        """Convert a single Word document to PDF using Microsoft Word"""
+        """Convert a single Word document to PDF using unoconv"""
         try:
-            word = app('Microsoft Word')
-            doc = word.open(str(docx_path))
-            doc.save_as(as_=str(pdf_path), file_format=k.PDF)
-            doc.close(saving=k.no)
-            word.quit()
+            import subprocess
+            result = subprocess.run(['unoconv', '-f', 'pdf', '-o', str(pdf_path), str(docx_path)], 
+                                  capture_output=True, text=True)
+            if result.returncode != 0:
+                raise ValueError(f"Failed to convert {docx_path} to PDF: {result.stderr}")
         except Exception as e:
             raise ValueError(f"Failed to convert {docx_path} to PDF: {str(e)}")
 
@@ -185,16 +184,13 @@ class DiplomaGenerator:
         pdf_dir.mkdir(exist_ok=True, parents=True)
         
         converted_files = []
-        word = app('Microsoft Word')
         
         try:
             for docx_file in docx_dir.glob('*.docx'):
                 pdf_file = pdf_dir / f"{docx_file.stem}.pdf"
-                doc = word.open(str(docx_file))
-                doc.save_as(as_=str(pdf_file), file_format=k.PDF)
-                doc.close(saving=k.no)
+                self.convert_to_pdf(docx_file, pdf_file)
                 converted_files.append(pdf_file)
-        finally:
-            word.quit()
+        except Exception as e:
+            raise ValueError(f"Failed to convert documents: {str(e)}")
             
         return converted_files 
