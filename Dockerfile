@@ -66,5 +66,9 @@ chmod +x /app/start.sh
 # Expose port
 EXPOSE 8080
 
+# Update Redis configuration
+RUN sed -i 's/bind 127.0.0.1/bind 0.0.0.0/g' /etc/redis/redis.conf && \
+    sed -i 's/protected-mode yes/protected-mode no/g' /etc/redis/redis.conf
+
 # Run the application with the startup script
 CMD ["/app/start.sh"] 

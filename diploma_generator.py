@@ -9,6 +9,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 import random
 from celery import Celery
+from tasks import convert_document  # Import the task
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

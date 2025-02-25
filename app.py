@@ -121,6 +121,11 @@ def convert_to_pdf():
     docx_files = request.files.getlist('docx_files')
     total_files = len([f for f in docx_files if f.filename])
     
+    # Initialize paths at the start
+    temp_docx_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_docx')
+    temp_pdf_dir = os.path.join(app.config['OUTPUT_FOLDER'], 'temp_pdf')
+    zip_path = os.path.join(app.config['OUTPUT_FOLDER'], 'converted_pdfs.zip')
+    
     try:
         # Validate file types first
         for docx_file in docx_files:
@@ -130,8 +135,6 @@ def convert_to_pdf():
                 }), 400
 
         # Create temporary directories
-        temp_docx_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_docx')
-        temp_pdf_dir = os.path.join(app.config['OUTPUT_FOLDER'], 'temp_pdf')
         os.makedirs(temp_docx_dir, exist_ok=True)
         os.makedirs(temp_pdf_dir, exist_ok=True)
         
@@ -157,7 +160,6 @@ def convert_to_pdf():
         app.logger.info(f"Successfully converted {success_count} out of {total_files} files to PDF")
         
         # Create zip with PDFs
-        zip_path = os.path.join(app.config['OUTPUT_FOLDER'], 'converted_pdfs.zip')
         with zipfile.ZipFile(zip_path, 'w') as zipf:
             for pdf_file in pdf_files:
                 zipf.write(pdf_file, pdf_file.name)
