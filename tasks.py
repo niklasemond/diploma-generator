@@ -1,3 +1,4 @@
+import time
 from celery import Celery
 from pathlib import Path
 import os
@@ -7,7 +8,7 @@ import random
 # Configure Celery with Redis as both broker and result backend
 celery = Celery('tasks',
                 broker='redis://localhost:6379/0',
-                backend='redis://localhost:6379/1')  # Use different DB for results
+                backend='redis://localhost:6379/1')
 
 # Configure Celery
 celery.conf.update(
@@ -16,16 +17,23 @@ celery.conf.update(
     result_serializer='json',
     timezone='UTC',
     enable_utc=True,
+    task_time_limit=180,  # 3 minutes max per task
+    worker_max_tasks_per_child=10,  # Restart worker after 10 tasks
+    worker_prefetch_multiplier=1,  # Only prefetch one task at a time
 )
 
-SOFFICE_PORTS = list(range(8100, 8103))  # 3 ports for conversion
+# Use a single port for conversion to prevent conflicts
+SOFFICE_PORT = 8100
 
 @celery.task(bind=True, max_retries=3)
 def convert_document(self, docx_path: str, pdf_path: str) -> dict:
     """Convert a single document with retry capability"""
     try:
-        port = random.choice(SOFFICE_PORTS)
-        convert_single_doc_to_pdf(docx_path, pdf_path, port)
+        # Kill any existing soffice processes before starting
+        os.system("pkill soffice || true")
+        time.sleep(1)  # Wait for process to clean up
+        
+        convert_single_doc_to_pdf(docx_path, pdf_path, SOFFICE_PORT)
         return {
             'status': 'success',
             'file': pdf_path,
@@ -33,6 +41,9 @@ def convert_document(self, docx_path: str, pdf_path: str) -> dict:
         }
     except Exception as e:
         try:
+            # Kill soffice process before retry
+            os.system("pkill soffice || true")
+            time.sleep(2)  # Give more time for cleanup before retry
             self.retry(countdown=5)  # Retry after 5 seconds
         except self.MaxRetriesExceededError:
             return {

@@ -38,24 +38,21 @@ until redis-cli ping; do\n\
     sleep 1\n\
 done\n\
 \n\
-# Start LibreOffice headless mode with resource limits\n\
-ulimit -n 1024\n\
-for port in $(seq 8100 8102); do\n\
-    /usr/lib/libreoffice/program/soffice \
-    --headless \
-    --accept="socket,host=127.0.0.1,port=$port;urp;" \
-    --nofirststartwizard \
-    --nologo \
-    --nodefault \
-    --norestore \
-    & \n\
-done\n\
+# Start a single LibreOffice instance\n\
+/usr/lib/libreoffice/program/soffice \
+--headless \
+--accept="socket,host=127.0.0.1,port=8100;urp;" \
+--nofirststartwizard \
+--nologo \
+--nodefault \
+--norestore \
+& \n\
 \n\
 # Wait for services to start\n\
 sleep 5\n\
 \n\
 # Start the Celery worker\n\
-celery -A tasks worker --loglevel=info & \n\
+celery -A tasks worker --loglevel=info --concurrency=1 & \n\
 \n\
 # Start the application\n\
 exec gunicorn \

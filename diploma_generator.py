@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 import random
 from converter import convert_single_doc_to_pdf
 from tasks import convert_document  # Add this import
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -195,37 +196,38 @@ class DiplomaGenerator:
         convert_single_doc_to_pdf(docx_path, pdf_path, port)
 
     def batch_convert_to_pdf(self, docx_dir: Union[str, Path], pdf_dir: Union[str, Path]) -> List[Path]:
-        """Convert all Word documents in a directory to PDFs using task queue"""
+        """Convert all Word documents in a directory to PDFs using sequential processing"""
         docx_dir = Path(docx_dir)
         pdf_dir = Path(pdf_dir)
         pdf_dir.mkdir(exist_ok=True, parents=True)
         
         docx_files = list(docx_dir.glob('*.docx'))
-        conversion_tasks = []
-        
-        # Submit all files to the task queue
-        for docx_file in docx_files:
-            pdf_file = pdf_dir / f"{docx_file.stem}.pdf"
-            task = convert_document.delay(str(docx_file), str(pdf_file))
-            conversion_tasks.append((task, docx_file, pdf_file))
-        
         converted_files = []
         errors = []
         
-        # Monitor task completion
-        for task, docx_file, pdf_file in conversion_tasks:
+        # Process files one at a time
+        for docx_file in docx_files:
+            pdf_file = pdf_dir / f"{docx_file.stem}.pdf"
             try:
-                result = task.get(timeout=60)  # Wait up to 60 seconds per file
+                # Submit task and wait for completion
+                task = convert_document.delay(str(docx_file), str(pdf_file))
+                result = task.get(timeout=120)  # Wait up to 2 minutes per file
+                
                 if result['status'] == 'success':
                     converted_files.append(pdf_file)
                     logger.info(result['message'])
                 else:
                     errors.append(result['message'])
                     logger.error(result['message'])
+                    
+                # Add a small delay between files to let LibreOffice clean up
+                time.sleep(2)
+                
             except Exception as e:
                 error_msg = f"Failed to convert {docx_file.name}: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
+                continue
         
         if not converted_files:
             error_summary = "\n".join(errors)
