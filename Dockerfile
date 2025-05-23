@@ -21,6 +21,14 @@ RUN useradd -m -u 1000 appuser && \
 RUN mkdir -p uploads output && \
     chown -R appuser:appuser /app
 
+# Configure Redis
+RUN sed -i 's/bind 127.0.0.1/bind 0.0.0.0/g' /etc/redis/redis.conf && \
+    sed -i 's/protected-mode yes/protected-mode no/g' /etc/redis/redis.conf && \
+    sed -i 's/databases 16/databases 32/g' /etc/redis/redis.conf && \
+    echo "maxmemory 256mb" >> /etc/redis/redis.conf && \
+    echo "maxmemory-policy allkeys-lru" >> /etc/redis/redis.conf && \
+    chown -R appuser:appuser /app
+
 # Switch to non-root user
 USER appuser
 
@@ -43,11 +51,12 @@ ENV PYTHONUNBUFFERED=1
 
 # Create a startup script that manages LibreOffice instances
 RUN echo '#!/bin/bash\n\
-# Start Redis server with proper configuration\n\
+# Start Redis server\n\
 sudo service redis-server start\n\
 \n\
 # Wait for Redis to start\n\
 until redis-cli ping; do\n\
+    echo "Waiting for Redis..."\n\
     sleep 1\ndone\n\
 \n\
 # Start a single LibreOffice instance\n\
@@ -79,18 +88,6 @@ chmod +x /app/start.sh
 
 # Expose port
 EXPOSE 8080
-
-# Update Redis configuration for multiple databases
-USER root
-RUN sed -i 's/bind 127.0.0.1/bind 0.0.0.0/g' /etc/redis/redis.conf && \
-    sed -i 's/protected-mode yes/protected-mode no/g' /etc/redis/redis.conf && \
-    sed -i 's/databases 16/databases 32/g' /etc/redis/redis.conf && \
-    echo "maxmemory 256mb" >> /etc/redis/redis.conf && \
-    echo "maxmemory-policy allkeys-lru" >> /etc/redis/redis.conf && \
-    chown -R appuser:appuser /app
-
-# Switch back to non-root user
-USER appuser
 
 # Run the application with the startup script
 CMD ["/app/start.sh"] 
