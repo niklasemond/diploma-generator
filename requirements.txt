@@ -6,4 +6,4 @@ Pillow==10.0.0
 gunicorn==21.2.0
 celery==5.3.6
 redis==5.0.1
-python-docx-template==0.16.6 
+python-docx-template 
