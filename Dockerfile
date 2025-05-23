@@ -51,8 +51,8 @@ ENV PYTHONUNBUFFERED=1
 
 # Create a startup script that manages LibreOffice instances
 RUN echo '#!/bin/bash\n\
-# Start Redis server\n\
-sudo service redis-server start\n\
+# Start Redis server directly\n\
+sudo redis-server /etc/redis/redis.conf &\n\
 \n\
 # Wait for Redis to start\n\
 until redis-cli ping; do\n\
