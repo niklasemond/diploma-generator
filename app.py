@@ -54,7 +54,6 @@ def upload_files():
     template_file = request.files['template']
     names_file = request.files['names']
     placeholder = request.form.get('placeholder', '[NAME]')
-    output_format = request.form.get('output_format', 'pdf')  # Default to PDF
 
     if template_file.filename == '':
         return jsonify({'error': 'No template selected'}), 400
@@ -94,7 +93,7 @@ def upload_files():
             names, 
             output_dir, 
             placeholder,
-            output_format='pdf'  # Force PDF format
+            output_format='pdf'  # Always output PDFs
         )
 
         # Verify all files exist and are readable

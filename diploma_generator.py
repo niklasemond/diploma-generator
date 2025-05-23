@@ -139,19 +139,14 @@ class DiplomaGenerator:
                 
                 # Replace each instance of the placeholder
                 for inst in text_instances:
-                    # First remove the old text
+                    # First remove the old text by drawing a white rectangle over it
                     page.draw_rect(inst, color=fitz.utils.getColor('white'), fill=fitz.utils.getColor('white'))
                     
-                    # Insert the new name
-                    # Get the position from the found instance
-                    x = inst[0]  # x coordinate of the placeholder
-                    y = inst[1]  # y coordinate of the placeholder
-                    
-                    # Insert the new text at the same position with default font
+                    # Insert the new name at the same position
                     page.insert_text(
-                        (x, y), 
-                        name, 
-                        fontsize=20,      # You might need to adjust this
+                        (inst[0], inst[1]),  # Use the same position as the placeholder
+                        name,
+                        fontsize=12,  # Default font size
                         color=fitz.utils.getColor('black')
                     )
             
