@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import List, Union
 import fitz  # PyMuPDF for PDF handling
 from docx import Document  # python-docx for Word documents
+from docxtpl import DocxTemplate  # Add this import
 from PIL import Image, ImageDraw, ImageFont  # Pillow for image handling
 import os
 import subprocess  # For PDF conversion
@@ -161,30 +162,43 @@ class DiplomaGenerator:
         doc.close()
 
     def _generate_from_word(self, name: str, placeholder: str, output_path: Path) -> None:
-        """Generate diploma from Word template"""
-        # Create a copy of the template
-        doc = Document(self.template_path)
-        
-        # Replace placeholder in paragraphs
-        for paragraph in doc.paragraphs:
-            if placeholder in paragraph.text:
-                # Preserve the original formatting
-                for run in paragraph.runs:
-                    if placeholder in run.text:
-                        run.text = run.text.replace(placeholder, name)
-        
-        # Also check tables if any
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    if placeholder in cell.text:
-                        for paragraph in cell.paragraphs:
-                            for run in paragraph.runs:
-                                if placeholder in run.text:
-                                    run.text = run.text.replace(placeholder, name)
-        
-        # Save the modified document
-        doc.save(output_path) 
+        """Generate diploma from Word template using python-docx-template"""
+        try:
+            # Load the template
+            doc = DocxTemplate(str(self.template_path))
+            
+            # Create context with the name
+            context = {
+                'name': name,  # This will replace {{name}} in the template
+                'Namn': name,  # This will replace {{Namn}} in the template
+            }
+            
+            # Render the template
+            doc.render(context)
+            
+            # Save the modified document
+            doc.save(str(output_path))
+            
+            # Verify the file was created and is readable
+            if not output_path.exists():
+                raise ValueError(f"Failed to save document to {output_path}")
+            
+            # Try to open the file to verify it's valid
+            try:
+                test_doc = Document(str(output_path))
+                test_doc.close()
+            except Exception as e:
+                raise ValueError(f"Generated document is not valid: {str(e)}")
+                
+        except Exception as e:
+            logger.error(f"Error generating Word document: {str(e)}")
+            # Clean up the potentially corrupted file
+            if output_path.exists():
+                try:
+                    output_path.unlink()
+                except:
+                    pass
+            raise
 
     def _get_soffice_port(self):
         """Get a random available port from the pool"""
