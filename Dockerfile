@@ -10,6 +10,11 @@ RUN apt-get update && apt-get install -y \
     default-jre \
     python3-uno \
     redis-server \
+    build-essential \
+    zlib1g-dev \
+    libjpeg-dev \
+    libpng-dev \
+    libfreetype6-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a non-root user
