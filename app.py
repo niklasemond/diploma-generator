@@ -4,6 +4,7 @@ import os
 from diploma_generator import DiplomaGenerator
 import shutil
 import zipfile
+import time
 
 app = Flask(__name__)
 
@@ -101,24 +102,30 @@ def upload_files():
             if not os.path.exists(file_path):
                 raise ValueError(f"Generated file {file_path} does not exist")
             try:
+                # Try to open and read the file to verify it's valid
                 with open(file_path, 'rb') as f:
-                    # Try to read the file to verify it's valid
-                    f.read(1024)
+                    content = f.read(1024)
+                    if not content:
+                        raise ValueError(f"Generated file {file_path} is empty")
             except Exception as e:
                 raise ValueError(f"Generated file {file_path} is not readable: {str(e)}")
 
-        # Create zip file
-        zip_path = os.path.join(output_dir, 'diplomas.zip')
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        # Create zip file with a temporary name first
+        temp_zip_path = os.path.join(output_dir, f'diplomas_{int(time.time())}.zip')
+        with zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for file_path in generated_files:
+                # Add each file with its basename
                 zipf.write(file_path, os.path.basename(file_path))
+                # Verify the file was added to the zip
+                if os.path.basename(file_path) not in zipf.namelist():
+                    raise ValueError(f"Failed to add {file_path} to zip file")
 
-        # Verify zip file
-        if not os.path.exists(zip_path):
+        # Verify the zip file
+        if not os.path.exists(temp_zip_path):
             raise ValueError("Failed to create zip file")
         
         # Try to read the zip file to verify it's valid
-        with zipfile.ZipFile(zip_path, 'r') as zipf:
+        with zipfile.ZipFile(temp_zip_path, 'r') as zipf:
             if not zipf.namelist():
                 raise ValueError("Zip file is empty")
             # Verify each file in the zip
@@ -127,6 +134,12 @@ def upload_files():
                     zipf.read(name)
                 except Exception as e:
                     raise ValueError(f"Invalid file in zip: {name}")
+
+        # Move the temporary zip to the final location
+        zip_path = os.path.join(output_dir, 'diplomas.zip')
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        os.rename(temp_zip_path, zip_path)
 
         response = send_file(
             zip_path,
@@ -163,6 +176,8 @@ def upload_files():
             os.remove(names_path)
         if zip_path and os.path.exists(zip_path):
             os.remove(zip_path)
+        if temp_zip_path and os.path.exists(temp_zip_path):
+            os.remove(temp_zip_path)
         for file_path in generated_files:
             if os.path.exists(file_path):
                 os.remove(file_path)

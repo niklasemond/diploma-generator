@@ -182,16 +182,17 @@ class DiplomaGenerator:
             # Render the template
             doc.render(context)
             
-            # Save the modified document
-            doc.save(str(output_path))
+            # Save the modified document with explicit encoding
+            temp_path = str(output_path) + '.temp'
+            doc.save(temp_path)
             
-            # Verify the file was created and is readable
-            if not output_path.exists():
-                raise ValueError(f"Failed to save document to {output_path}")
+            # Verify the temporary file was created and is readable
+            if not os.path.exists(temp_path):
+                raise ValueError(f"Failed to save temporary document to {temp_path}")
             
-            # Try to open the file to verify it's valid
+            # Try to open the temporary file to verify it's valid
             try:
-                test_doc = Document(str(output_path))
+                test_doc = Document(temp_path)
                 # Check if the document has content
                 if len(test_doc.paragraphs) == 0:
                     raise ValueError("Generated document has no content")
@@ -202,12 +203,39 @@ class DiplomaGenerator:
                     raise ValueError(f"Name '{name}' was not found in the generated document")
                 
                 test_doc.close()
+                
+                # If validation passes, move the temporary file to the final location
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+                os.rename(temp_path, str(output_path))
+                
+                # Final verification of the moved file
+                if not os.path.exists(output_path):
+                    raise ValueError(f"Failed to move document to final location {output_path}")
+                
+                # Try to open the final file one more time
+                final_doc = Document(str(output_path))
+                if len(final_doc.paragraphs) == 0:
+                    raise ValueError("Final document has no content")
+                final_doc.close()
+                
             except Exception as e:
+                # Clean up the temporary file if it exists
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except:
+                        pass
                 raise ValueError(f"Generated document is not valid: {str(e)}")
                 
         except Exception as e:
             logger.error(f"Error generating Word document: {str(e)}")
-            # Clean up the potentially corrupted file
+            # Clean up any potentially corrupted files
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
             if output_path.exists():
                 try:
                     output_path.unlink()
