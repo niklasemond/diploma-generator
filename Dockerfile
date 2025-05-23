@@ -12,15 +12,26 @@ RUN apt-get update && apt-get install -y \
     redis-server \
     && rm -rf /var/lib/apt/lists/*
 
-# Create necessary directories
-RUN mkdir -p uploads output
+# Create a non-root user
+RUN useradd -m -u 1000 appuser
+
+# Create necessary directories and set permissions
+RUN mkdir -p uploads output && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Create and activate virtual environment
+RUN python -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
 
 # Copy requirements first to leverage Docker cache
-COPY requirements.txt .
+COPY --chown=appuser:appuser requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY . .
+COPY --chown=appuser:appuser . .
 
 # Set environment variables
 ENV FLASK_APP=app.py
@@ -31,7 +42,7 @@ ENV PYTHONUNBUFFERED=1
 # Create a startup script that manages LibreOffice instances
 RUN echo '#!/bin/bash\n\
 # Start Redis server with proper configuration\n\
-redis-server /etc/redis/redis.conf --daemonize yes\n\
+sudo redis-server /etc/redis/redis.conf --daemonize yes\n\
 \n\
 # Wait for Redis to start\n\
 until redis-cli ping; do\n\
@@ -69,11 +80,16 @@ chmod +x /app/start.sh
 EXPOSE 8080
 
 # Update Redis configuration for multiple databases
+USER root
 RUN sed -i 's/bind 127.0.0.1/bind 0.0.0.0/g' /etc/redis/redis.conf && \
     sed -i 's/protected-mode yes/protected-mode no/g' /etc/redis/redis.conf && \
     sed -i 's/databases 16/databases 32/g' /etc/redis/redis.conf && \
     echo "maxmemory 256mb" >> /etc/redis/redis.conf && \
-    echo "maxmemory-policy allkeys-lru" >> /etc/redis/redis.conf
+    echo "maxmemory-policy allkeys-lru" >> /etc/redis/redis.conf && \
+    chown -R appuser:appuser /app
+
+# Switch back to non-root user
+USER appuser
 
 # Run the application with the startup script
 CMD ["/app/start.sh"] 
