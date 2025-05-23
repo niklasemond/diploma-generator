@@ -10,10 +10,12 @@ RUN apt-get update && apt-get install -y \
     default-jre \
     python3-uno \
     redis-server \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a non-root user
-RUN useradd -m -u 1000 appuser
+RUN useradd -m -u 1000 appuser && \
+    echo "appuser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
 # Create necessary directories and set permissions
 RUN mkdir -p uploads output && \
@@ -42,12 +44,11 @@ ENV PYTHONUNBUFFERED=1
 # Create a startup script that manages LibreOffice instances
 RUN echo '#!/bin/bash\n\
 # Start Redis server with proper configuration\n\
-sudo redis-server /etc/redis/redis.conf --daemonize yes\n\
+sudo service redis-server start\n\
 \n\
 # Wait for Redis to start\n\
 until redis-cli ping; do\n\
-    sleep 1\n\
-done\n\
+    sleep 1\ndone\n\
 \n\
 # Start a single LibreOffice instance\n\
 /usr/lib/libreoffice/program/soffice \
