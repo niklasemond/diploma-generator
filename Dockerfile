@@ -43,6 +43,9 @@ USER appuser
 RUN python -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 
+# Set environment variable to ignore the specific warning
+ENV CFLAGS="-Wno-error=unused-function"
+
 # Copy requirements first to leverage Docker cache
 COPY --chown=appuser:appuser requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
