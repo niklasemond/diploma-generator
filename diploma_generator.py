@@ -167,10 +167,16 @@ class DiplomaGenerator:
             # Load the template
             doc = DocxTemplate(str(self.template_path))
             
-            # Create context with the name
+            # Convert the custom placeholder to python-docx-template format
+            # Remove any brackets or braces from the placeholder
+            clean_placeholder = placeholder.strip('[]{}')
+            
+            # Create context with both formats to ensure compatibility
             context = {
-                'name': name,  # This will replace {{name}} in the template
-                'Namn': name,  # This will replace {{Namn}} in the template
+                clean_placeholder: name,  # Original placeholder without brackets
+                f"{{{{{clean_placeholder}}}}}": name,  # python-docx-template format
+                f"[{clean_placeholder}]": name,  # Square bracket format
+                f"{{{clean_placeholder}}}": name,  # Curly brace format
             }
             
             # Render the template
@@ -186,6 +192,15 @@ class DiplomaGenerator:
             # Try to open the file to verify it's valid
             try:
                 test_doc = Document(str(output_path))
+                # Check if the document has content
+                if len(test_doc.paragraphs) == 0:
+                    raise ValueError("Generated document has no content")
+                
+                # Check if the name was actually inserted
+                content = '\n'.join(p.text for p in test_doc.paragraphs)
+                if name not in content:
+                    raise ValueError(f"Name '{name}' was not found in the generated document")
+                
                 test_doc.close()
             except Exception as e:
                 raise ValueError(f"Generated document is not valid: {str(e)}")

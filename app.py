@@ -64,6 +64,11 @@ def upload_files():
     if not allowed_file(template_file.filename):
         return jsonify({'error': 'Invalid template file format'}), 400
 
+    template_path = None
+    names_path = None
+    zip_path = None
+    generated_files = []
+
     try:
         # Ensure directories exist
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -91,26 +96,76 @@ def upload_files():
             output_format='docx'  # Force Word format
         )
 
+        # Verify all files exist and are readable
+        for file_path in generated_files:
+            if not os.path.exists(file_path):
+                raise ValueError(f"Generated file {file_path} does not exist")
+            try:
+                with open(file_path, 'rb') as f:
+                    # Try to read the file to verify it's valid
+                    f.read(1024)
+            except Exception as e:
+                raise ValueError(f"Generated file {file_path} is not readable: {str(e)}")
+
         # Create zip file
         zip_path = os.path.join(output_dir, 'diplomas.zip')
-        with zipfile.ZipFile(zip_path, 'w') as zipf:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for file_path in generated_files:
                 zipf.write(file_path, os.path.basename(file_path))
 
-        response = send_file(zip_path, as_attachment=True)
+        # Verify zip file
+        if not os.path.exists(zip_path):
+            raise ValueError("Failed to create zip file")
         
-        # Clean up
-        cleanup_files(template_path, names_path, zip_path)
-        for file_path in generated_files:
-            if os.path.exists(file_path):
-                os.remove(file_path)
+        # Try to read the zip file to verify it's valid
+        with zipfile.ZipFile(zip_path, 'r') as zipf:
+            if not zipf.namelist():
+                raise ValueError("Zip file is empty")
+            # Verify each file in the zip
+            for name in zipf.namelist():
+                try:
+                    zipf.read(name)
+                except Exception as e:
+                    raise ValueError(f"Invalid file in zip: {name}")
+
+        response = send_file(
+            zip_path,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='diplomas.zip'
+        )
+        
+        # Clean up after sending the response
+        @after_this_request
+        def cleanup(response):
+            try:
+                if template_path and os.path.exists(template_path):
+                    os.remove(template_path)
+                if names_path and os.path.exists(names_path):
+                    os.remove(names_path)
+                if zip_path and os.path.exists(zip_path):
+                    os.remove(zip_path)
+                for file_path in generated_files:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+            except Exception as e:
+                app.logger.error(f"Error during cleanup: {e}")
+            return response
         
         return response
 
     except Exception as e:
         app.logger.error(f"Error processing files: {e}")
         # Clean up any files that might have been created
-        cleanup_files(template_path, names_path, None)
+        if template_path and os.path.exists(template_path):
+            os.remove(template_path)
+        if names_path and os.path.exists(names_path):
+            os.remove(names_path)
+        if zip_path and os.path.exists(zip_path):
+            os.remove(zip_path)
+        for file_path in generated_files:
+            if os.path.exists(file_path):
+                os.remove(file_path)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/convert-to-pdf', methods=['POST'])
