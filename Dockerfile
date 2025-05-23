@@ -10,12 +10,10 @@ RUN apt-get update && apt-get install -y \
     default-jre \
     python3-uno \
     redis-server \
-    sudo \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a non-root user
-RUN useradd -m -u 1000 appuser && \
-    echo "appuser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+RUN useradd -m -u 1000 appuser
 
 # Create necessary directories and set permissions
 RUN mkdir -p uploads output && \
@@ -27,7 +25,10 @@ RUN sed -i 's/bind 127.0.0.1/bind 0.0.0.0/g' /etc/redis/redis.conf && \
     sed -i 's/databases 16/databases 32/g' /etc/redis/redis.conf && \
     echo "maxmemory 256mb" >> /etc/redis/redis.conf && \
     echo "maxmemory-policy allkeys-lru" >> /etc/redis/redis.conf && \
-    chown -R appuser:appuser /app
+    chown -R appuser:appuser /app && \
+    chown -R appuser:appuser /var/lib/redis && \
+    chown -R appuser:appuser /var/log/redis && \
+    chown -R appuser:appuser /etc/redis
 
 # Switch to non-root user
 USER appuser
@@ -52,7 +53,7 @@ ENV PYTHONUNBUFFERED=1
 # Create a startup script that manages LibreOffice instances
 RUN echo '#!/bin/bash\n\
 # Start Redis server directly\n\
-sudo redis-server /etc/redis/redis.conf &\n\
+redis-server /etc/redis/redis.conf &\n\
 \n\
 # Wait for Redis to start\n\
 until redis-cli ping; do\n\
