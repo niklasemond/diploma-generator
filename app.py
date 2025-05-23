@@ -54,7 +54,7 @@ def upload_files():
     template_file = request.files['template']
     names_file = request.files['names']
     placeholder = request.form.get('placeholder', '[NAME]')
-    output_format = request.form.get('output_format', 'docx')  # Default to docx
+    output_format = request.form.get('output_format', 'pdf')  # Default to PDF
 
     if template_file.filename == '':
         return jsonify({'error': 'No template selected'}), 400
@@ -94,7 +94,7 @@ def upload_files():
             names, 
             output_dir, 
             placeholder,
-            output_format='docx'  # Force Word format
+            output_format='pdf'  # Force PDF format
         )
 
         # Verify all files exist and are readable
@@ -107,9 +107,9 @@ def upload_files():
                     content = f.read(1024)
                     if not content:
                         raise ValueError(f"Generated file {file_path} is empty")
-                    # Verify it's a Word document
-                    if content[:4] != b'PK\x03\x04':
-                        raise ValueError(f"Generated file {file_path} is not a valid Word document")
+                    # Verify it's a PDF
+                    if not content.startswith(b'%PDF-'):
+                        raise ValueError(f"Generated file {file_path} is not a valid PDF")
             except Exception as e:
                 raise ValueError(f"Generated file {file_path} is not readable: {str(e)}")
 
@@ -117,11 +117,6 @@ def upload_files():
         temp_zip_path = os.path.join(output_dir, f'diplomas_{int(time.time())}.zip')
         with zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for file_path in generated_files:
-                # Ensure the file has .docx extension
-                if not file_path.endswith('.docx'):
-                    new_path = str(file_path) + '.docx'
-                    os.rename(file_path, new_path)
-                    file_path = new_path
                 # Add each file with its basename
                 zipf.write(file_path, os.path.basename(file_path))
                 # Verify the file was added to the zip
@@ -140,9 +135,9 @@ def upload_files():
             for name in zipf.namelist():
                 try:
                     content = zipf.read(name)
-                    # Verify it's a Word document
-                    if content[:4] != b'PK\x03\x04':
-                        raise ValueError(f"File {name} in zip is not a valid Word document")
+                    # Verify it's a PDF
+                    if not content.startswith(b'%PDF-'):
+                        raise ValueError(f"File {name} in zip is not a valid PDF")
                 except Exception as e:
                     raise ValueError(f"Invalid file in zip: {name}")
 

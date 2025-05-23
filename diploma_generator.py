@@ -123,37 +123,44 @@ class DiplomaGenerator:
             new_img.save(output_path)
 
     def _generate_from_pdf(self, name: str, placeholder: str, output_path: Path) -> None:
-        """Generate diploma from PDF template by converting to Word and replacing placeholder"""
+        """Generate diploma from PDF template by directly editing the PDF"""
         try:
-            # First convert PDF to Word using LibreOffice
-            temp_docx = str(output_path) + '.temp.docx'
-            port = self._get_soffice_port()
+            # Open the source PDF
+            doc = fitz.open(self.template_path)
             
-            # Convert PDF to Word
-            convert_single_doc_to_pdf(self.template_path, temp_docx, port, is_pdf=True)
+            # Create a new PDF document
+            new_doc = fitz.open()
             
-            if not os.path.exists(temp_docx):
-                raise ValueError(f"Failed to convert PDF to Word document")
+            # Copy pages from source to new document
+            new_doc.insert_pdf(doc)
             
-            # Now use the Word document as a template
-            doc = DocxTemplate(temp_docx)
+            # Process each page
+            for page in new_doc:
+                # Get all text instances
+                text_instances = page.search_for(placeholder)
+                
+                # Replace each instance of the placeholder
+                for inst in text_instances:
+                    # First remove the old text
+                    page.draw_rect(inst, color=fitz.utils.getColor('white'), fill=fitz.utils.getColor('white'))
+                    
+                    # Insert the new name
+                    # Get the position from the found instance
+                    x = inst[0]  # x coordinate of the placeholder
+                    y = inst[1]  # y coordinate of the placeholder
+                    
+                    # Insert the new text at the same position
+                    page.insert_text((x, y), name, 
+                                   fontname="helv",  # Use a standard font
+                                   fontsize=12,      # You might need to adjust this
+                                   color=fitz.utils.getColor('black'))
             
-            # Convert the custom placeholder to python-docx-template format
-            clean_placeholder = placeholder.strip('[]{}')
+            # Save the modified document
+            new_doc.save(str(output_path))
             
-            # Create context with both formats to ensure compatibility
-            context = {
-                clean_placeholder: name,  # Original placeholder without brackets
-                f"{{{{{clean_placeholder}}}}}": name,  # python-docx-template format
-                f"[{clean_placeholder}]": name,  # Square bracket format
-                f"{{{clean_placeholder}}}": name,  # Curly brace format
-            }
-            
-            # Render the template
-            doc.render(context)
-            
-            # Save the final document
-            doc.save(str(output_path))
+            # Close both documents
+            new_doc.close()
+            doc.close()
             
             # Verify the file was created and is readable
             if not output_path.exists():
@@ -161,42 +168,22 @@ class DiplomaGenerator:
             
             # Try to open the file to verify it's valid
             try:
-                test_doc = Document(str(output_path))
-                # Check if the document has content
-                if len(test_doc.paragraphs) == 0:
-                    raise ValueError("Generated document has no content")
-                
-                # Check if the name was actually inserted
-                content = '\n'.join(p.text for p in test_doc.paragraphs)
-                if name not in content:
-                    raise ValueError(f"Name '{name}' was not found in the generated document")
-                
+                test_doc = fitz.open(str(output_path))
+                if test_doc.page_count == 0:
+                    raise ValueError("Generated document has no pages")
                 test_doc.close()
-                
             except Exception as e:
                 raise ValueError(f"Generated document is not valid: {str(e)}")
                 
         except Exception as e:
             logger.error(f"Error generating document from PDF: {str(e)}")
             # Clean up any potentially corrupted files
-            if os.path.exists(temp_docx):
-                try:
-                    os.remove(temp_docx)
-                except:
-                    pass
             if output_path.exists():
                 try:
                     output_path.unlink()
                 except:
                     pass
             raise
-        finally:
-            # Clean up temporary file
-            if os.path.exists(temp_docx):
-                try:
-                    os.remove(temp_docx)
-                except:
-                    pass
 
     def _generate_from_word(self, name: str, placeholder: str, output_path: Path) -> None:
         """Generate diploma from Word template using python-docx-template"""
