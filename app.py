@@ -1,8 +1,7 @@
-from flask import Flask, render_template, request, send_file, jsonify, after_this_request
+from flask import Flask, render_template, request, send_file, jsonify
 from werkzeug.utils import secure_filename
 import os
 from diploma_generator import DiplomaGenerator
-import shutil
 import zipfile
 import time
 
@@ -17,27 +16,8 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
 
-ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png'}
-ALLOWED_WORD_EXTENSIONS = {'.docx', '.doc'}
-
 def allowed_file(filename):
-    return os.path.splitext(filename)[1].lower() in ALLOWED_EXTENSIONS
-
-def allowed_word_file(filename):
-    """Check if the file is a Word document"""
-    return os.path.splitext(filename)[1].lower() in ALLOWED_WORD_EXTENSIONS
-
-def cleanup_files(template_path, names_path, zip_path):
-    """Clean up temporary files"""
-    try:
-        if os.path.exists(template_path):
-            os.remove(template_path)
-        if os.path.exists(names_path):
-            os.remove(names_path)
-        if os.path.exists(zip_path):
-            os.remove(zip_path)
-    except Exception as e:
-        app.logger.error(f"Error cleaning up files: {e}")
+    return os.path.splitext(filename)[1].lower() == '.pdf'
 
 @app.route('/')
 def index():
@@ -62,7 +42,7 @@ def upload_files():
         return jsonify({'error': 'No names file selected'}), 400
 
     if not allowed_file(template_file.filename):
-        return jsonify({'error': 'Invalid template file format'}), 400
+        return jsonify({'error': 'Only PDF templates are supported'}), 400
 
     template_path = None
     names_path = None
@@ -70,10 +50,6 @@ def upload_files():
     generated_files = []
 
     try:
-        # Ensure directories exist
-        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-        os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
-
         # Save uploaded files
         template_path = os.path.join(app.config['UPLOAD_FOLDER'], 
                                    secure_filename(template_file.filename))
@@ -92,8 +68,7 @@ def upload_files():
         generated_files = generator.generate_diplomas(
             names, 
             output_dir, 
-            placeholder,
-            output_format='pdf'  # Always output PDFs
+            placeholder
         )
 
         # Verify all files exist and are readable
@@ -152,10 +127,10 @@ def upload_files():
             as_attachment=True,
             download_name='diplomas.zip'
         )
-        
-        # Clean up after sending the response
-        @after_this_request
-        def cleanup(response):
+
+        # Clean up files after sending
+        @response.call_on_close
+        def cleanup():
             try:
                 if template_path and os.path.exists(template_path):
                     os.remove(template_path)
@@ -167,120 +142,25 @@ def upload_files():
                     if os.path.exists(file_path):
                         os.remove(file_path)
             except Exception as e:
-                app.logger.error(f"Error during cleanup: {e}")
-            return response
-        
+                app.logger.error(f"Error during cleanup: {str(e)}")
+
         return response
 
     except Exception as e:
-        app.logger.error(f"Error processing files: {e}")
         # Clean up any files that might have been created
-        if template_path and os.path.exists(template_path):
-            os.remove(template_path)
-        if names_path and os.path.exists(names_path):
-            os.remove(names_path)
-        if zip_path and os.path.exists(zip_path):
-            os.remove(zip_path)
-        if temp_zip_path and os.path.exists(temp_zip_path):
-            os.remove(temp_zip_path)
-        for file_path in generated_files:
-            if os.path.exists(file_path):
-                os.remove(file_path)
+        try:
+            if template_path and os.path.exists(template_path):
+                os.remove(template_path)
+            if names_path and os.path.exists(names_path):
+                os.remove(names_path)
+            if zip_path and os.path.exists(zip_path):
+                os.remove(zip_path)
+            for file_path in generated_files:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+        except:
+            pass
         return jsonify({'error': str(e)}), 500
 
-@app.route('/convert-to-pdf', methods=['POST'])
-def convert_to_pdf():
-    if 'docx_files' not in request.files:
-        return jsonify({'error': 'No Word documents provided'}), 400
-    
-    docx_files = request.files.getlist('docx_files')
-    total_files = len([f for f in docx_files if f.filename])
-    
-    # Initialize paths at the start
-    temp_docx_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_docx')
-    temp_pdf_dir = os.path.join(app.config['OUTPUT_FOLDER'], 'temp_pdf')
-    zip_path = os.path.join(app.config['OUTPUT_FOLDER'], 'converted_pdfs.zip')
-    
-    try:
-        # Validate file types first
-        for docx_file in docx_files:
-            if docx_file.filename and not allowed_word_file(docx_file.filename):
-                return jsonify({
-                    'error': f'Invalid file type: {docx_file.filename}. Only Word documents (.doc, .docx) are allowed.'
-                }), 400
-
-        # Create temporary directories
-        os.makedirs(temp_docx_dir, exist_ok=True)
-        os.makedirs(temp_pdf_dir, exist_ok=True)
-        
-        # Save uploaded Word files
-        saved_paths = []
-        for docx_file in docx_files:
-            if docx_file.filename:
-                path = os.path.join(temp_docx_dir, secure_filename(docx_file.filename))
-                docx_file.save(path)
-                saved_paths.append(path)
-                app.logger.info(f"Saved Word file: {path}")
-        
-        if not saved_paths:
-            return jsonify({'error': 'No valid files uploaded'}), 400
-        
-        app.logger.info(f"Converting {len(saved_paths)} Word files to PDF")
-        
-        # Convert to PDFs
-        generator = DiplomaGenerator()
-        pdf_files, errors = generator.batch_convert_to_pdf(temp_docx_dir, temp_pdf_dir)
-        
-        success_count = len(pdf_files)
-        app.logger.info(f"Successfully converted {success_count} out of {total_files} files to PDF")
-        
-        # Create zip with PDFs
-        with zipfile.ZipFile(zip_path, 'w') as zipf:
-            for pdf_file in pdf_files:
-                zipf.write(pdf_file, pdf_file.name)
-                app.logger.info(f"Added {pdf_file.name} to zip file")
-        
-        @after_this_request
-        def cleanup(response):
-            try:
-                if os.path.exists(temp_docx_dir):
-                    shutil.rmtree(temp_docx_dir)
-                if os.path.exists(temp_pdf_dir):
-                    shutil.rmtree(temp_pdf_dir)
-                if os.path.exists(zip_path):
-                    os.remove(zip_path)
-                app.logger.info("Cleanup completed successfully")
-            except Exception as e:
-                app.logger.error(f"Cleanup error: {e}")
-            return response
-
-        # Add conversion summary to response headers
-        response = send_file(
-            zip_path,
-            mimetype='application/zip',
-            as_attachment=True,
-            download_name='converted_pdfs.zip'
-        )
-        response.headers['X-Conversion-Summary'] = f"Converted {success_count} of {total_files} files"
-        if errors:
-            response.headers['X-Conversion-Errors'] = '; '.join(errors)
-        
-        return response
-        
-    except Exception as e:
-        app.logger.error(f"Error converting to PDF: {e}")
-        # Cleanup on error
-        if os.path.exists(temp_docx_dir):
-            shutil.rmtree(temp_docx_dir)
-        if os.path.exists(temp_pdf_dir):
-            shutil.rmtree(temp_pdf_dir)
-        if os.path.exists(zip_path):
-            os.remove(zip_path)
-        return jsonify({
-            'error': str(e),
-            'message': 'Failed to convert documents to PDF'
-        }), 500
-
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port) 
+    app.run(host='0.0.0.0', port=8080) 

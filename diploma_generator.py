@@ -1,18 +1,7 @@
 from pathlib import Path
 from typing import List, Union
 import fitz  # PyMuPDF for PDF handling
-from docx import Document  # python-docx for Word documents
-from docxtpl import DocxTemplate  # Add this import
-from PIL import Image, ImageDraw, ImageFont  # Pillow for image handling
-import os
-import subprocess  # For PDF conversion
 import logging
-from concurrent.futures import ThreadPoolExecutor
-import random
-from converter import convert_single_doc_to_pdf
-from tasks import convert_document  # Add this import
-import time
-import shutil
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,19 +9,15 @@ logger = logging.getLogger(__name__)
 
 class DiplomaGenerator:
     def __init__(self):
-        self.supported_formats = ['.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png']
         self.template_path = None
-        self.template_format = None
-        self.soffice_ports = list(range(8100, 8115))  # 15 ports for parallel processing
 
     def load_template(self, template_path: Union[str, Path]) -> None:
-        """Load the diploma template in any supported format"""
+        """Load the diploma template in PDF format"""
         template_path = Path(template_path)
-        if not template_path.suffix.lower() in self.supported_formats:
-            raise ValueError(f"Unsupported file format. Supported formats: {self.supported_formats}")
+        if not template_path.suffix.lower() == '.pdf':
+            raise ValueError("Only PDF templates are supported")
         
         self.template_path = template_path
-        self.template_format = template_path.suffix.lower()
         logger.info(f"Template loaded: {template_path}")
 
     def load_names(self, names_path: Union[str, Path]) -> List[str]:
@@ -42,18 +27,8 @@ class DiplomaGenerator:
             logger.info(f"Loaded {len(names)} names from {names_path}")
             return names
 
-    def detect_placeholder(self) -> str:
-        """Use AI to detect potential name placeholder in the template"""
-        # Implementation depends on the file format
-        if self.template_format in ['.jpg', '.jpeg', '.png']:
-            return self._detect_placeholder_image()
-        elif self.template_format == '.pdf':
-            return self._detect_placeholder_pdf()
-        else:  # Word documents
-            return self._detect_placeholder_word()
-
     def generate_diplomas(self, names: List[str], output_dir: Union[str, Path], 
-                         placeholder: str, output_format: str = 'docx') -> List[Path]:
+                         placeholder: str) -> List[Path]:
         """Generate individual diplomas and return list of generated file paths"""
         output_dir = Path(output_dir)
         output_dir.mkdir(exist_ok=True, parents=True)
@@ -61,7 +36,7 @@ class DiplomaGenerator:
         generated_files = []
         for name in names:
             try:
-                output_path = output_dir / f"diploma_{name.replace(' ', '_')}.{output_format}"
+                output_path = output_dir / f"diploma_{name.replace(' ', '_')}.pdf"
                 self._generate_single_diploma(name, placeholder, output_path)
                 generated_files.append(output_path)
                 logger.info(f"Generated diploma for {name}")
@@ -71,57 +46,8 @@ class DiplomaGenerator:
             
         return generated_files
 
-    def _detect_placeholder_image(self) -> str:
-        """Detect placeholder in image formats using OCR and AI"""
-        image = Image.open(self.template_path)
-        # Use pytesseract for OCR
-        text = pytesseract.image_to_string(image)
-        # Use AI to identify likely placeholder
-        # Implementation details here
-
-    def _detect_placeholder_pdf(self) -> str:
-        """Detect placeholder in PDF format"""
-        # Implementation using PyMuPDF
-
-    def _detect_placeholder_word(self) -> str:
-        """Detect placeholder in Word documents"""
-        # Implementation using python-docx
-
     def _generate_single_diploma(self, name: str, placeholder: str, output_path: Path) -> None:
-        """Generate a single diploma based on the template format"""
-        if self.template_format in ['.jpg', '.jpeg', '.png']:
-            self._generate_from_image(name, placeholder, output_path)
-        elif self.template_format == '.pdf':
-            self._generate_from_pdf(name, placeholder, output_path)
-        else:  # Word documents
-            self._generate_from_word(name, placeholder, output_path)
-
-    def _generate_from_image(self, name: str, placeholder: str, output_path: Path) -> None:
-        """Generate diploma from image template"""
-        with Image.open(self.template_path) as img:
-            # Create a copy to work with
-            new_img = img.copy()
-            draw = ImageDraw.Draw(new_img)
-            
-            # Basic implementation - you might want to adjust font size and position
-            try:
-                font = ImageFont.truetype("arial.ttf", 30)
-            except OSError:
-                font = ImageFont.load_default()
-                
-            # Center the name (basic implementation)
-            w, h = img.size
-            text_bbox = draw.textbbox((0, 0), name, font=font)
-            text_w = text_bbox[2] - text_bbox[0]
-            text_h = text_bbox[3] - text_bbox[1]
-            x = (w - text_w) / 2
-            y = (h - text_h) / 2
-            
-            draw.text((x, y), name, fill='black', font=font)
-            new_img.save(output_path)
-
-    def _generate_from_pdf(self, name: str, placeholder: str, output_path: Path) -> None:
-        """Generate diploma from PDF template by directly editing the PDF"""
+        """Generate a single diploma by replacing the placeholder with the name"""
         try:
             # Open the source PDF
             doc = fitz.open(self.template_path)
@@ -178,147 +104,4 @@ class DiplomaGenerator:
                     output_path.unlink()
                 except:
                     pass
-            raise
-
-    def _generate_from_word(self, name: str, placeholder: str, output_path: Path) -> None:
-        """Generate diploma from Word template using python-docx-template"""
-        try:
-            # Load the template
-            doc = DocxTemplate(str(self.template_path))
-            
-            # Convert the custom placeholder to python-docx-template format
-            # Remove any brackets or braces from the placeholder
-            clean_placeholder = placeholder.strip('[]{}')
-            
-            # Create context with both formats to ensure compatibility
-            context = {
-                clean_placeholder: name,  # Original placeholder without brackets
-                f"{{{{{clean_placeholder}}}}}": name,  # python-docx-template format
-                f"[{clean_placeholder}]": name,  # Square bracket format
-                f"{{{clean_placeholder}}}": name,  # Curly brace format
-            }
-            
-            # Render the template
-            doc.render(context)
-            
-            # Save the modified document with explicit encoding
-            temp_path = str(output_path) + '.temp'
-            doc.save(temp_path)
-            
-            # Verify the temporary file was created and is readable
-            if not os.path.exists(temp_path):
-                raise ValueError(f"Failed to save temporary document to {temp_path}")
-            
-            # Verify the file is actually a Word document
-            try:
-                with open(temp_path, 'rb') as f:
-                    header = f.read(4)
-                    # Check for DOCX file signature (PK\x03\x04)
-                    if header != b'PK\x03\x04':
-                        raise ValueError("Generated file is not a valid Word document")
-            except Exception as e:
-                raise ValueError(f"Failed to verify document format: {str(e)}")
-            
-            # Try to open the temporary file to verify it's valid
-            try:
-                test_doc = Document(temp_path)
-                # Check if the document has content
-                if len(test_doc.paragraphs) == 0:
-                    raise ValueError("Generated document has no content")
-                
-                # Check if the name was actually inserted
-                content = '\n'.join(p.text for p in test_doc.paragraphs)
-                if name not in content:
-                    raise ValueError(f"Name '{name}' was not found in the generated document")
-                
-                test_doc.close()
-                
-                # If validation passes, move the temporary file to the final location
-                if os.path.exists(output_path):
-                    os.remove(output_path)
-                os.rename(temp_path, str(output_path))
-                
-                # Final verification of the moved file
-                if not os.path.exists(output_path):
-                    raise ValueError(f"Failed to move document to final location {output_path}")
-                
-                # Try to open the final file one more time
-                final_doc = Document(str(output_path))
-                if len(final_doc.paragraphs) == 0:
-                    raise ValueError("Final document has no content")
-                final_doc.close()
-                
-            except Exception as e:
-                # Clean up the temporary file if it exists
-                if os.path.exists(temp_path):
-                    try:
-                        os.remove(temp_path)
-                    except:
-                        pass
-                raise ValueError(f"Generated document is not valid: {str(e)}")
-                
-        except Exception as e:
-            logger.error(f"Error generating Word document: {str(e)}")
-            # Clean up any potentially corrupted files
-            if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except:
-                    pass
-            if output_path.exists():
-                try:
-                    output_path.unlink()
-                except:
-                    pass
-            raise
-
-    def _get_soffice_port(self):
-        """Get a random available port from the pool"""
-        return random.choice(self.soffice_ports)
-
-    def convert_to_pdf(self, docx_path: Union[str, Path], pdf_path: Union[str, Path]) -> None:
-        """Convert a single Word document to PDF using soffice"""
-        port = self._get_soffice_port()
-        convert_single_doc_to_pdf(docx_path, pdf_path, port)
-
-    def batch_convert_to_pdf(self, docx_dir: Union[str, Path], pdf_dir: Union[str, Path]) -> List[Path]:
-        """Convert all Word documents in a directory to PDFs using sequential processing"""
-        docx_dir = Path(docx_dir)
-        pdf_dir = Path(pdf_dir)
-        pdf_dir.mkdir(exist_ok=True, parents=True)
-        
-        docx_files = list(docx_dir.glob('*.docx'))
-        converted_files = []
-        errors = []
-        
-        # Process files one at a time
-        for docx_file in docx_files:
-            pdf_file = pdf_dir / f"{docx_file.stem}.pdf"
-            try:
-                # Submit task and wait for completion
-                task = convert_document.delay(str(docx_file), str(pdf_file))
-                result = task.get(timeout=120)  # Wait up to 2 minutes per file
-                
-                if result['status'] == 'success':
-                    converted_files.append(pdf_file)
-                    logger.info(result['message'])
-                else:
-                    errors.append(result['message'])
-                    logger.error(result['message'])
-                    
-                # Add a small delay between files to let LibreOffice clean up
-                time.sleep(2)
-                
-            except Exception as e:
-                error_msg = f"Failed to convert {docx_file.name}: {str(e)}"
-                logger.error(error_msg)
-                errors.append(error_msg)
-                continue
-        
-        if not converted_files:
-            error_summary = "\n".join(errors)
-            raise ValueError(f"No files were successfully converted. Errors:\n{error_summary}")
-        elif errors:
-            logger.warning(f"Some files failed to convert:\n{chr(10).join(errors)}")
-        
-        return converted_files, errors 
+            raise 

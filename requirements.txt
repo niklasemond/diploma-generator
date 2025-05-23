@@ -1,10 +1,4 @@
 Flask==2.0.1
-Werkzeug==2.3.7
 PyMuPDF==1.18.14
-python-docx==0.8.11
-Pillow==8.3.1
-gunicorn==21.2.0
-celery==5.3.6
-redis==5.0.1
-docxtpl==0.16.7
-requests==2.31.0 
+gunicorn==20.1.0
+Werkzeug==2.0.1 
