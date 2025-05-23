@@ -107,6 +107,9 @@ def upload_files():
                     content = f.read(1024)
                     if not content:
                         raise ValueError(f"Generated file {file_path} is empty")
+                    # Verify it's a Word document
+                    if content[:4] != b'PK\x03\x04':
+                        raise ValueError(f"Generated file {file_path} is not a valid Word document")
             except Exception as e:
                 raise ValueError(f"Generated file {file_path} is not readable: {str(e)}")
 
@@ -114,6 +117,11 @@ def upload_files():
         temp_zip_path = os.path.join(output_dir, f'diplomas_{int(time.time())}.zip')
         with zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for file_path in generated_files:
+                # Ensure the file has .docx extension
+                if not file_path.endswith('.docx'):
+                    new_path = str(file_path) + '.docx'
+                    os.rename(file_path, new_path)
+                    file_path = new_path
                 # Add each file with its basename
                 zipf.write(file_path, os.path.basename(file_path))
                 # Verify the file was added to the zip
@@ -131,7 +139,10 @@ def upload_files():
             # Verify each file in the zip
             for name in zipf.namelist():
                 try:
-                    zipf.read(name)
+                    content = zipf.read(name)
+                    # Verify it's a Word document
+                    if content[:4] != b'PK\x03\x04':
+                        raise ValueError(f"File {name} in zip is not a valid Word document")
                 except Exception as e:
                     raise ValueError(f"Invalid file in zip: {name}")
 
