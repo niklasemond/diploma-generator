@@ -23,7 +23,7 @@ RUN mkdir -p uploads output && \
 RUN sed -i 's/bind 127.0.0.1/bind 0.0.0.0/g' /etc/redis/redis.conf && \
     sed -i 's/protected-mode yes/protected-mode no/g' /etc/redis/redis.conf && \
     sed -i 's/databases 16/databases 32/g' /etc/redis/redis.conf && \
-    echo "maxmemory 256mb" >> /etc/redis/redis.conf && \
+    echo "maxmemory 128mb" >> /etc/redis/redis.conf && \
     echo "maxmemory-policy allkeys-lru" >> /etc/redis/redis.conf && \
     chown -R appuser:appuser /app && \
     chown -R appuser:appuser /var/lib/redis && \
@@ -49,6 +49,8 @@ ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 ENV PATH="/usr/lib/libreoffice/program:${PATH}"
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONMALLOC=malloc
+ENV PYTHONMALLOCSTATS=1
 
 # Create a startup script that manages LibreOffice instances
 RUN echo '#!/bin/bash\n\
@@ -74,16 +76,18 @@ until redis-cli ping; do\n\
 sleep 5\n\
 \n\
 # Start the Celery worker\n\
-celery -A tasks worker --loglevel=info --concurrency=1 & \n\
+celery -A tasks worker --loglevel=info --concurrency=1 --max-tasks-per-child=5 & \n\
 \n\
 # Start the application\n\
 exec gunicorn \
     --bind 0.0.0.0:8080 \
-    --workers 2 \
-    --threads 4 \
+    --workers 1 \
+    --threads 2 \
     --timeout 120 \
     --max-requests 50 \
     --max-requests-jitter 10 \
+    --worker-class gthread \
+    --worker-tmp-dir /dev/shm \
     app:app' > /app/start.sh && \
 chmod +x /app/start.sh
 
