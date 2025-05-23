@@ -12,6 +12,7 @@ import random
 from converter import convert_single_doc_to_pdf
 from tasks import convert_document  # Add this import
 import time
+import shutil
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,9 +24,41 @@ class DiplomaGenerator:
         self.template_path = None
         self.template_format = None
         self.soffice_ports = list(range(8100, 8115))  # 15 ports for parallel processing
+        self.font_path = None
+        self._setup_fonts()
         
-        # Remove AI initialization for now
-        # self.text_detector = pipeline("object-detection", model="microsoft/layoutlm-base-uncased")
+    def _setup_fonts(self):
+        """Set up fonts directory and ensure required fonts are available"""
+        try:
+            # Create fonts directory if it doesn't exist
+            fonts_dir = Path('fonts')
+            fonts_dir.mkdir(exist_ok=True)
+            
+            # Check if Montessori font exists
+            montessori_font = fonts_dir / 'Montessori.ttf'
+            if not montessori_font.exists():
+                logger.warning("Montessori font not found in fonts directory. Please add 'Montessori.ttf' to the fonts directory.")
+                # Try to find the font in system fonts
+                system_fonts = [
+                    '/System/Library/Fonts/Montessori.ttf',  # macOS
+                    '/usr/share/fonts/truetype/Montessori.ttf',  # Linux
+                    'C:\\Windows\\Fonts\\Montessori.ttf'  # Windows
+                ]
+                
+                for font_path in system_fonts:
+                    if os.path.exists(font_path):
+                        # Copy the font to our fonts directory
+                        shutil.copy2(font_path, montessori_font)
+                        logger.info(f"Copied Montessori font from {font_path}")
+                        break
+                else:
+                    logger.error("Montessori font not found in system fonts. Please install the font or add it to the fonts directory.")
+            
+            self.font_path = str(montessori_font) if montessori_font.exists() else None
+            
+        except Exception as e:
+            logger.error(f"Error setting up fonts: {e}")
+            self.font_path = None
 
     def load_template(self, template_path: Union[str, Path]) -> None:
         """Load the diploma template in any supported format"""
@@ -149,11 +182,24 @@ class DiplomaGenerator:
                     x = inst[0]  # x coordinate of the placeholder
                     y = inst[1]  # y coordinate of the placeholder
                     
-                    # Insert the new text at the same position
-                    page.insert_text((x, y), name, 
-                                   fontname="helv",  # Use a standard font
-                                   fontsize=12,      # You might need to adjust this
-                                   color=fitz.utils.getColor('black'))
+                    # Insert the new text at the same position with Montessori font
+                    try:
+                        page.insert_text(
+                            (x, y), 
+                            name, 
+                            fontname="Montessori",  # Use Montessori font
+                            fontsize=20,      # You might need to adjust this
+                            color=fitz.utils.getColor('black')
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to use Montessori font: {e}. Falling back to default font.")
+                        # Fallback to default font
+                        page.insert_text(
+                            (x, y), 
+                            name, 
+                            fontsize=20,
+                            color=fitz.utils.getColor('black')
+                        )
             
             # Save the modified document
             new_doc.save(str(output_path))
